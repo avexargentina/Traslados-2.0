@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="es">
 <head>
@@ -489,7 +490,17 @@
 
 <div class="toast" id="toast"></div>
 
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
+const SUPABASE_URL = 'https://saybrmmpvqrdwhsksuco.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNheWJybW1wdnFyZHdoc2tzdWNvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODc2OTk1NjUsImV4cCI6MjEwMzI3NTU2NX0.poM0Y0hZSzQICMc6VNfZmg3Z00XkAUJYfghgQYLhQog';
+let supabaseClient = null;
+try{
+  if(window.supabase && window.supabase.createClient){
+    supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  }
+}catch(e){ console.error('No se pudo iniciar Supabase:', e); supabaseClient = null; }
+
 function deepClone(obj){ return JSON.parse(JSON.stringify(obj)); }
 
 const DEFAULT_CONFIG = {
@@ -535,6 +546,19 @@ function updateStorageBanner(){
 }
 
 async function storageGetRaw(key){
+  if(supabaseClient){
+    try{
+      const { data, error } = await supabaseClient.from('app_data').select('data').eq('id', key).maybeSingle();
+      if(error) throw error;
+      storageBackend = 'supabase';
+      if(data && data.data && Object.keys(data.data).length){
+        return { key, value: JSON.stringify(data.data) };
+      }
+      return null;
+    }catch(e){
+      console.error('Fallo al leer de Supabase:', e);
+    }
+  }
   if(window.storage){
     try{
       const r = await window.storage.get(key, true);
@@ -560,6 +584,17 @@ async function storageGetRaw(key){
 }
 
 async function storageSetRaw(key, value){
+  if(supabaseClient){
+    try{
+      const parsedValue = JSON.parse(value);
+      const { error } = await supabaseClient.from('app_data').upsert({ id:key, data: parsedValue, updated_at: new Date().toISOString() });
+      if(error) throw error;
+      storageBackend = 'supabase';
+      return true;
+    }catch(e){
+      console.error('Fallo al guardar en Supabase:', e);
+    }
+  }
   if(window.storage){
     try{
       const r = await window.storage.set(key, value, sharedMode);
