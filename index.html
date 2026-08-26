@@ -1,0 +1,1355 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Registro de Servicios</title>
+<style>
+  :root{
+    --bg:#191b1d;
+    --panel:#232628;
+    --panel2:#2b2f32;
+    --line:#3a3f43;
+    --line-soft:#2f3336;
+    --text:#edeeee;
+    --text-dim:#9ea4a8;
+    --text-faint:#6d7377;
+    --orange:#ff7a29;
+    --yellow:#ffc93f;
+    --green:#3ecf8e;
+    --red:#e5555a;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Courier New", monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+    --disp: Arial Narrow, "Helvetica Neue Condensed", Roboto Condensed, sans-serif;
+    --radius: 8px;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; background:var(--bg); color:var(--text); font-family:var(--sans);
+    -webkit-font-smoothing:antialiased;
+  }
+  .stripe{
+    height:6px;
+    background:repeating-linear-gradient(135deg, var(--orange) 0 14px, var(--yellow) 14px 28px);
+    opacity:0.9;
+  }
+  header{
+    padding:18px 20px 14px;
+    border-bottom:1px solid var(--line);
+    background:var(--panel);
+  }
+  header h1{
+    font-family:var(--disp);
+    text-transform:uppercase;
+    letter-spacing:0.06em;
+    font-size:22px;
+    margin:0 0 2px;
+    font-weight:700;
+    color:var(--text);
+  }
+  header .sub{
+    font-size:12.5px; color:var(--text-dim); font-family:var(--mono);
+    letter-spacing:0.02em;
+  }
+  nav.tabs{
+    display:flex; gap:2px; padding:0 20px; background:var(--panel);
+    border-bottom:1px solid var(--line); overflow-x:auto;
+  }
+  nav.tabs button{
+    font-family:var(--disp); text-transform:uppercase; letter-spacing:0.05em;
+    font-size:13px; font-weight:700; color:var(--text-dim);
+    background:transparent; border:none; border-bottom:3px solid transparent;
+    padding:12px 14px 10px; cursor:pointer; white-space:nowrap;
+  }
+  nav.tabs button.active{ color:var(--orange); border-bottom-color:var(--orange); }
+  nav.tabs button:hover{ color:var(--text); }
+
+  main{ max-width:900px; margin:0 auto; padding:18px 16px 60px; }
+  .view{ display:none; }
+  .view.active{ display:block; }
+
+  .card{
+    background:var(--panel); border:1px solid var(--line); border-radius:var(--radius);
+    padding:18px; margin-bottom:16px;
+  }
+  .card h2{
+    font-family:var(--disp); text-transform:uppercase; letter-spacing:0.04em;
+    font-size:15px; margin:0 0 14px; color:var(--text-dim); font-weight:700;
+    border-bottom:1px dashed var(--line); padding-bottom:8px;
+  }
+
+  label{ display:block; font-size:12px; color:var(--text-dim); margin-bottom:4px; font-family:var(--mono); }
+  .row{ display:flex; gap:10px; flex-wrap:wrap; margin-bottom:12px; }
+  .field{ flex:1; min-width:140px; }
+  input[type=text], input[type=number], input[type=tel], input[type=date], select, textarea{
+    width:100%; background:var(--panel2); border:1px solid var(--line); color:var(--text);
+    padding:9px 10px; border-radius:6px; font-size:14px; font-family:var(--sans);
+  }
+  textarea{ font-family:var(--mono); font-size:13px; }
+  input:focus, select:focus, textarea:focus{ outline:none; border-color:var(--orange); }
+  input::placeholder{ color:var(--text-faint); }
+
+  .segmented{ display:flex; border:1px solid var(--line); border-radius:6px; overflow:hidden; }
+  .segmented button{
+    flex:1; background:var(--panel2); border:none; color:var(--text-dim); padding:9px 8px;
+    font-size:13px; cursor:pointer; border-right:1px solid var(--line); font-family:var(--sans);
+  }
+  .segmented button:last-child{ border-right:none; }
+  .segmented button.on{ background:var(--orange); color:#241300; font-weight:700; }
+
+  .btn{
+    background:var(--panel2); color:var(--text); border:1px solid var(--line);
+    padding:9px 14px; border-radius:6px; font-size:13.5px; cursor:pointer; font-family:var(--sans);
+    display:inline-flex; align-items:center; gap:6px;
+  }
+  .btn:hover{ border-color:var(--text-dim); }
+  .btn.primary{ background:var(--orange); color:#241300; border-color:var(--orange); font-weight:700; }
+  .btn.primary:hover{ background:#ff8a42; }
+  .btn.danger{ color:var(--red); }
+  .btn.small{ padding:5px 9px; font-size:12px; }
+  .btn:disabled{ opacity:0.4; cursor:not-allowed; }
+
+  .actions-row{ display:flex; gap:8px; justify-content:flex-end; margin-top:6px; flex-wrap:wrap; }
+
+  .hint{ font-size:12px; color:var(--text-faint); margin-top:2px; }
+  .error-text{ color:var(--red); font-size:12px; margin-top:4px; }
+
+  .ticket{
+    font-family:var(--mono); background:var(--panel2); color:var(--yellow);
+    display:inline-block; padding:3px 9px; border-radius:5px; font-size:12.5px;
+    border:1px dashed var(--line);
+  }
+
+  table{ width:100%; border-collapse:collapse; font-size:13px; }
+  th{
+    text-align:left; font-family:var(--mono); font-size:11px; text-transform:uppercase;
+    color:var(--text-faint); padding:6px 8px; border-bottom:1px solid var(--line);
+    letter-spacing:0.03em;
+  }
+  td{ padding:8px; border-bottom:1px solid var(--line-soft); vertical-align:top; }
+  tr:hover td{ background:rgba(255,255,255,0.02); }
+  .tbl-wrap{ overflow-x:auto; }
+
+  .badge{
+    font-family:var(--mono); font-size:10.5px; text-transform:uppercase; font-weight:700;
+    padding:2px 7px; border-radius:4px; border:1px solid; display:inline-block;
+    letter-spacing:0.03em;
+  }
+  .badge.pagado{ color:var(--green); border-color:var(--green); }
+  .badge.pendiente{ color:var(--yellow); border-color:var(--yellow); }
+  .badge.seguro{ color:#8ab4ff; border-color:#8ab4ff; }
+  .badge.neutro{ color:var(--text-dim); border-color:var(--line); }
+  .badge.finalizado{ color:var(--green); border-color:var(--green); }
+
+  .empty{ text-align:center; padding:40px 20px; color:var(--text-faint); font-size:13.5px; }
+
+  .metrics{ display:grid; grid-template-columns:repeat(auto-fit, minmax(140px,1fr)); gap:10px; margin-bottom:16px; }
+  .metric{ background:var(--panel); border:1px solid var(--line); border-radius:var(--radius); padding:12px 14px; }
+  .metric .lbl{ font-family:var(--mono); font-size:10.5px; color:var(--text-faint); text-transform:uppercase; letter-spacing:0.03em; }
+  .metric .val{ font-family:var(--mono); font-size:22px; font-weight:700; margin-top:4px; }
+  .metric.orange .val{ color:var(--orange); }
+  .metric.green .val{ color:var(--green); }
+  .metric.yellow .val{ color:var(--yellow); }
+
+  .config-item{
+    display:flex; align-items:center; gap:8px; padding:8px 0; border-bottom:1px solid var(--line-soft);
+    flex-wrap:wrap;
+  }
+  .config-item:last-child{ border-bottom:none; }
+  .config-item .name{ flex:1; min-width:140px; font-size:14px; }
+
+  .toast{
+    position:fixed; bottom:20px; left:50%; transform:translateX(-50%);
+    background:var(--orange); color:#241300; padding:10px 18px; border-radius:6px;
+    font-size:13.5px; font-weight:700; z-index:999; opacity:0; pointer-events:none;
+    transition:opacity 0.2s;
+  }
+  .toast.show{ opacity:1; }
+
+  .filters{ display:flex; gap:8px; flex-wrap:wrap; margin-bottom:14px; }
+  .filters select, .filters input{ width:auto; min-width:120px; }
+
+  .modal-overlay{
+    display:none; position:fixed; inset:0; background:rgba(0,0,0,0.65); z-index:1000;
+    align-items:center; justify-content:center; padding:16px;
+  }
+  .modal-overlay.show{ display:flex; }
+  .modal-box{ max-width:380px; width:100%; }
+
+  @media (max-width:520px){
+    .metrics{ grid-template-columns:repeat(2,1fr); }
+  }
+</style>
+</head>
+<body>
+
+<div id="app-root">
+  <div class="stripe"></div>
+  <header>
+    <h1>Registro de servicios</h1>
+    <div class="sub">Traslados y mecánica ligera — hoja de ruta digital</div>
+  </header>
+  <div id="storage-banner" style="display:none; background:#4a3510; color:var(--yellow); font-size:12.5px; padding:8px 20px; border-bottom:1px solid var(--line); font-family:var(--mono);"></div>
+
+  <nav class="tabs">
+    <button data-view="nuevo" class="active">Nuevo servicio</button>
+    <button data-view="registro">Registro</button>
+    <button data-view="chofer">Chofer</button>
+    <button data-view="config">Configuración</button>
+  </nav>
+
+  <main>
+
+    <!-- NUEVO SERVICIO -->
+    <div class="view active" id="view-nuevo">
+      <div class="card">
+        <h2 style="display:flex; justify-content:space-between; align-items:center;">
+          <span>Pegar texto de asistencia</span>
+          <button type="button" class="btn small" id="btn-toggle-pegado">Mostrar</button>
+        </h2>
+        <div id="pegado-content" style="display:none;">
+          <div class="row">
+            <div class="field">
+              <label>Pegá acá el mensaje que llega de la aseguradora</label>
+              <textarea id="f-pegado" rows="6" placeholder="* ID Asistencia: 41078&#10;* Tipo de asistencia: acarreo&#10;* Origen: ...&#10;* Destino: ...&#10;* Vehículo a asistir: ...&#10;* Patente del vehículo a asistir: ...&#10;* Asegurado: ...&#10;* Teléfono del asegurado: ..."></textarea>
+            </div>
+          </div>
+          <div class="actions-row" style="justify-content:flex-start;">
+            <button class="btn primary" id="btn-autocompletar">Autocompletar con este texto</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Datos del servicio <span class="ticket" id="preview-ticket">OT-0001</span></h2>
+        <div class="row">
+          <div class="field">
+            <label>Tipo de servicio</label>
+            <select id="f-tipo"></select>
+          </div>
+        </div>
+
+        <div class="row">
+          <div class="field">
+            <label>Cliente</label>
+            <input type="text" id="f-cliente" placeholder="Nombre y apellido">
+          </div>
+          <div class="field">
+            <label>Teléfono</label>
+            <input type="tel" id="f-telefono" placeholder="11 2345 6789">
+          </div>
+        </div>
+
+        <div class="row">
+          <div class="field">
+            <label>Marca</label>
+            <input type="text" id="f-marca" placeholder="Honda, Yamaha, Ford...">
+          </div>
+          <div class="field">
+            <label>Modelo</label>
+            <input type="text" id="f-modelo" placeholder="Wave 110, Fiesta...">
+          </div>
+          <div class="field">
+            <label>Patente (si tiene)</label>
+            <input type="text" id="f-patente" placeholder="AB123CD">
+          </div>
+        </div>
+
+        <div class="row" id="grp-traslado" style="display:none;">
+          <div class="field">
+            <label>Origen</label>
+            <input type="text" id="f-origen" placeholder="Dirección de retiro">
+          </div>
+          <div class="field">
+            <label>Destino</label>
+            <input type="text" id="f-destino" placeholder="Dirección de entrega">
+          </div>
+        </div>
+        <div class="row" id="grp-links" style="display:none;">
+          <div class="field">
+            <label>Link de Maps — origen (opcional, pegalo vos)</label>
+            <div style="display:flex; gap:6px;">
+              <input type="text" id="f-link-origen" placeholder="https://maps.app.goo.gl/...">
+              <button type="button" class="btn small" id="btn-abrir-origen">Abrir</button>
+            </div>
+          </div>
+          <div class="field">
+            <label>Link de Maps — destino (opcional, pegalo vos)</label>
+            <div style="display:flex; gap:6px;">
+              <input type="text" id="f-link-destino" placeholder="https://maps.app.goo.gl/...">
+              <button type="button" class="btn small" id="btn-abrir-destino">Abrir</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="row" id="grp-tarifa" style="display:none;">
+          <div class="field">
+            <label>Tarifa</label>
+            <div class="segmented" id="seg-tarifa">
+              <button type="button" data-val="tarifa1">Tarifa 1</button>
+              <button type="button" data-val="tarifa2">Tarifa 2</button>
+            </div>
+            <div class="hint">A modo de referencia, para saber qué tarifa aplicó.</div>
+          </div>
+        </div>
+
+        <div class="row">
+          <div class="field">
+            <label>Tipo de pago</label>
+            <div class="segmented" id="seg-pago">
+              <button type="button" data-val="particular" class="on">Particular</button>
+              <button type="button" data-val="seguro">Seguro</button>
+            </div>
+          </div>
+          <div class="field">
+            <label>Valor a cobrar al cliente</label>
+            <input type="number" id="f-valor" placeholder="0" min="0" step="1">
+            <div class="hint">Si es seguro, no se le cobra nada al cliente.</div>
+          </div>
+          <div class="field" id="grp-estadopago">
+            <label>Estado de pago</label>
+            <div class="segmented" id="seg-estadopago">
+              <button type="button" data-val="pendiente" class="on">Pendiente</button>
+              <button type="button" data-val="pagado">Pagado</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="row">
+          <div class="field">
+            <label>Notas (opcional)</label>
+            <textarea id="f-notas" rows="2" placeholder="Detalles adicionales del servicio"></textarea>
+          </div>
+        </div>
+
+        <div id="form-error" class="error-text" style="display:none;"></div>
+
+        <div class="actions-row">
+          <button class="btn" id="btn-limpiar">Limpiar</button>
+          <button class="btn primary" id="btn-guardar">Guardar servicio</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- REGISTRO -->
+    <div class="view" id="view-registro">
+      <div class="metrics" id="metrics-registro"></div>
+      <div class="card">
+        <h2>Servicios registrados</h2>
+        <div class="filters">
+          <select id="filt-tipo"><option value="">Todos los tipos</option></select>
+          <select id="filt-pago">
+            <option value="">Particular y seguro</option>
+            <option value="particular">Particular</option>
+            <option value="seguro">Seguro</option>
+          </select>
+          <select id="filt-estado">
+            <option value="">Todo estado</option>
+            <option value="pendiente">Pendiente</option>
+            <option value="pagado">Pagado</option>
+          </select>
+          <input type="text" id="filt-texto" placeholder="Buscar cliente, patente...">
+        </div>
+        <div class="tbl-wrap">
+          <table id="tbl-registro">
+            <thead>
+              <tr>
+                <th>OT</th><th>Fecha</th><th>Cliente</th><th>Servicio</th><th>Vehículo</th>
+                <th>Estado</th><th>Valor</th><th></th>
+              </tr>
+            </thead>
+            <tbody id="tbl-registro-body"></tbody>
+          </table>
+        </div>
+        <div class="empty" id="registro-empty" style="display:none;">
+          Todavía no hay servicios registrados. Cargá el primero en «Nuevo servicio».
+        </div>
+      </div>
+    </div>
+
+    <!-- CHOFER -->
+    <div class="view" id="view-chofer">
+      <div class="card">
+        <h2>Vista del chofer</h2>
+        <div class="hint" style="margin-bottom:12px;">Acá el chofer marca si el servicio está finalizado y cómo cobró (efectivo o transferencia). Se guarda al toque.</div>
+        <div class="filters">
+          <select id="chofer-filtro">
+            <option value="pendientes">Sin definir / no finalizados</option>
+            <option value="todos">Todos los particulares</option>
+          </select>
+        </div>
+        <div id="chofer-list"></div>
+        <div class="empty" id="chofer-empty" style="display:none;">No hay servicios para mostrar acá.</div>
+      </div>
+    </div>
+
+    <!-- CONFIG -->
+    <div class="view" id="view-config">
+      <div class="card">
+        <h2>Alertas al guardar</h2>
+        <div class="row">
+          <div class="field">
+            <label>Avisar si falta algún dato importante antes de guardar</label>
+            <div class="segmented" id="seg-alertar">
+              <button type="button" data-val="si" class="on">Activado</button>
+              <button type="button" data-val="no">Desactivado</button>
+            </div>
+          </div>
+        </div>
+        <div class="hint">Ningún campo es obligatorio para guardar. Esto solo controla si te avisamos antes, por si te olvidaste de algo.</div>
+      </div>
+
+      <div class="card">
+        <h2>Tipos de servicio</h2>
+        <div id="config-tipos"></div>
+        <div class="row" style="margin-top:10px;">
+          <div class="field"><label>Nombre nuevo tipo</label><input type="text" id="new-tipo-nombre" placeholder="Ej: Cambio de aceite"></div>
+          <div class="field">
+            <label>¿Es traslado?</label>
+            <div class="segmented" id="new-tipo-traslado">
+              <button type="button" data-val="no" class="on">No</button>
+              <button type="button" data-val="si">Sí</button>
+            </div>
+          </div>
+        </div>
+        <div class="row" id="grp-new-tipo-comision" style="display:none;">
+          <div class="field">
+            <label>¿Cuánto se lleva el chofer?</label>
+            <div class="segmented" id="new-tipo-comtipo">
+              <button type="button" data-val="porcentaje" class="on">Porcentaje</button>
+              <button type="button" data-val="fijo">Monto fijo</button>
+            </div>
+          </div>
+          <div class="field"><label>Valor</label><input type="number" id="new-tipo-comvalor" placeholder="60" min="0" value="60"></div>
+        </div>
+        <div class="actions-row"><button class="btn primary" id="btn-add-tipo">Agregar tipo</button></div>
+      </div>
+
+      <div class="card">
+        <h2>Tarifas generales</h2>
+        <div class="row">
+          <div class="field">
+            <label>Nombre tarifa 1</label>
+            <input type="text" id="cfg-tarifa1-nombre">
+          </div>
+          <div class="field">
+            <label>Valor</label>
+            <input type="number" id="cfg-tarifa1-valor" min="0">
+          </div>
+        </div>
+        <div class="row">
+          <div class="field">
+            <label>Nombre tarifa 2</label>
+            <input type="text" id="cfg-tarifa2-nombre">
+          </div>
+          <div class="field">
+            <label>Valor</label>
+            <input type="number" id="cfg-tarifa2-valor" min="0">
+          </div>
+        </div>
+        <div class="hint">Valores de referencia interna. No se autocompletan solos en la carga de un servicio.</div>
+        <div class="actions-row"><button class="btn primary" id="btn-guardar-tarifas">Guardar tarifas</button></div>
+      </div>
+
+      <div class="card">
+        <h2>Copia de seguridad</h2>
+        <div class="hint" style="margin-bottom:10px;">Exportá todos los datos como texto por si necesitás respaldarlos.</div>
+        <div class="actions-row" style="justify-content:flex-start;">
+          <button class="btn" id="btn-exportar">Exportar todo (copiar)</button>
+        </div>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<!-- VISTA DE UN SOLO SERVICIO (para compartir por link) -->
+<div id="solo-root" style="display:none;">
+  <div class="stripe"></div>
+  <header>
+    <h1>Resumen del servicio</h1>
+    <div class="sub">Actualizá el estado cuando termines</div>
+  </header>
+  <main>
+    <div class="card" id="solo-card"></div>
+  </main>
+</div>
+
+<!-- MODAL: datos faltantes -->
+<div class="modal-overlay" id="modal-overlay">
+  <div class="card modal-box">
+    <h2 style="border:none; margin-bottom:10px;">Faltan algunos datos</h2>
+    <div id="modal-missing-list" style="font-size:13.5px; color:var(--text-dim); margin-bottom:16px; line-height:1.6;"></div>
+    <div class="actions-row">
+      <button class="btn" id="modal-btn-completar">Completar</button>
+      <button class="btn primary" id="modal-btn-guardar-igual">Guardar igual</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+function deepClone(obj){ return JSON.parse(JSON.stringify(obj)); }
+
+const DEFAULT_CONFIG = {
+  nextTicket: 1,
+  alertarFaltantes: true,
+  serviceTypes: [
+    { id:'arranque', nombre:'Arranque de batería', esTraslado:false },
+    { id:'rueda', nombre:'Cambio de rueda', esTraslado:false },
+    { id:'traslado', nombre:'Traslado de moto', esTraslado:true, comision:{tipo:'porcentaje', valor:60} },
+    { id:'bateria', nombre:'Venta de batería', esTraslado:false }
+  ],
+  tarifas: {
+    tarifa1: { nombre:'Tarifa 1', valor:8000 },
+    tarifa2: { nombre:'Tarifa 2', valor:12000 }
+  }
+};
+
+let config = null;
+let servicios = [];
+let seg = { pago:'particular', estadopago:'pendiente', tarifa:'tarifa1' };
+let editingId = null;
+
+const STORAGE_KEY = 'taller-data';
+
+let sharedMode = true;
+let storageBackend = 'none'; // 'cloud' | 'local' | 'memory'
+
+function memGet(key){ return (window.__memStore||{})[key]; }
+function memSet(key, value){ window.__memStore = window.__memStore || {}; window.__memStore[key] = value; }
+
+function updateStorageBanner(){
+  const b = document.getElementById('storage-banner');
+  if(!b) return;
+  if(storageBackend==='local'){
+    b.style.display='block';
+    b.textContent = '⚠️ Guardando solo en este navegador (no se comparte con el chofer ni con otros dispositivos).';
+  } else if(storageBackend==='memory'){
+    b.style.display='block';
+    b.textContent = '⚠️ No se pudo activar ningún guardado permanente. Los datos se pierden al cerrar o recargar la página.';
+  } else {
+    b.style.display='none';
+  }
+}
+
+async function storageGetRaw(key){
+  if(window.storage){
+    try{
+      const r = await window.storage.get(key, true);
+      sharedMode = true; storageBackend = 'cloud';
+      return r;
+    }catch(e){
+      try{
+        const r2 = await window.storage.get(key, false);
+        sharedMode = false; storageBackend = 'cloud';
+        return r2;
+      }catch(e2){ /* sigue al fallback */ }
+    }
+  }
+  try{
+    const v = localStorage.getItem(key);
+    storageBackend = 'local';
+    return v ? { key, value:v } : null;
+  }catch(e){
+    storageBackend = 'memory';
+    const v = memGet(key);
+    return v!==undefined ? { key, value:v } : null;
+  }
+}
+
+async function storageSetRaw(key, value){
+  if(window.storage){
+    try{
+      const r = await window.storage.set(key, value, sharedMode);
+      if(r){ storageBackend = 'cloud'; return true; }
+    }catch(e){ console.error('Fallo guardado cloud (modo '+(sharedMode?'compartido':'personal')+'):', e); }
+    try{
+      const alt = !sharedMode;
+      const r2 = await window.storage.set(key, value, alt);
+      if(r2){ sharedMode = alt; storageBackend = 'cloud'; return true; }
+    }catch(e2){ console.error('Fallo guardado cloud (modo '+(!sharedMode?'compartido':'personal')+'):', e2); }
+  }
+  try{
+    localStorage.setItem(key, value);
+    storageBackend = 'local';
+    return true;
+  }catch(e){
+    console.error('Fallo localStorage:', e);
+    memSet(key, value);
+    storageBackend = 'memory';
+    return true;
+  }
+}
+
+async function loadState(){
+  const r = await storageGetRaw(STORAGE_KEY);
+  if(r){
+    try{
+      const parsed = JSON.parse(r.value);
+      config = parsed.config || deepClone(DEFAULT_CONFIG);
+      servicios = parsed.servicios || [];
+    }catch(e){
+      config = deepClone(DEFAULT_CONFIG);
+      servicios = [];
+    }
+  } else {
+    config = deepClone(DEFAULT_CONFIG);
+    servicios = [];
+  }
+  if(config.alertarFaltantes === undefined) config.alertarFaltantes = true;
+  if(!config.tarifas) config.tarifas = deepClone(DEFAULT_CONFIG.tarifas);
+  updateStorageBanner();
+}
+
+async function saveAll(){
+  const payload = JSON.stringify({config, servicios});
+  const ok = await storageSetRaw(STORAGE_KEY, payload);
+  updateStorageBanner();
+  if(!ok){
+    toast('No se pudo guardar. Probá recargar la página.');
+    return false;
+  }
+  if(storageBackend==='memory'){
+    toast('Guardado solo en esta sesión (se va a perder al recargar).');
+  }
+  return true;
+}
+
+function toast(msg){
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(t._h);
+  t._h = setTimeout(()=>t.classList.remove('show'), 2400);
+}
+
+function copyText(str){
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(str).then(()=>toast('Copiado al portapapeles')).catch(()=>fallbackCopy(str));
+  } else fallbackCopy(str);
+}
+function fallbackCopy(str){
+  const ta = document.createElement('textarea');
+  ta.value = str; document.body.appendChild(ta); ta.select();
+  try{ document.execCommand('copy'); toast('Copiado al portapapeles'); }catch(e){ toast('No se pudo copiar'); }
+  document.body.removeChild(ta);
+}
+
+function fmtMoney(n){
+  n = Number(n)||0;
+  return '$' + n.toLocaleString('es-AR', {maximumFractionDigits:0});
+}
+function fmtFecha(iso){
+  const d = new Date(iso);
+  return d.toLocaleDateString('es-AR') + ' ' + d.toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'});
+}
+function ticketFmt(n){ return 'OT-' + String(n).padStart(4,'0'); }
+function tipoById(id){ return config.serviceTypes.find(t=>t.id===id); }
+function calcCorteChofer(tipo, valor){
+  if(!tipo || !tipo.esTraslado || !tipo.comision) return null;
+  if(tipo.comision.tipo==='fijo') return Number(tipo.comision.valor)||0;
+  return Math.round((Number(valor)||0) * (Number(tipo.comision.valor)||0) / 100);
+}
+function escapeHtml(s){
+  return String(s||'').replace(/[&<>"']/g, c=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+}
+
+/* ---------- MODAL DE CONFIRMACIÓN ---------- */
+function mostrarModalFaltantes(faltantes){
+  return new Promise(resolve=>{
+    const overlay = document.getElementById('modal-overlay');
+    document.getElementById('modal-missing-list').innerHTML =
+      'Te falta cargar: <b>' + faltantes.join(', ') + '</b>.<br>¿Querés completarlo o guardar igual?';
+    overlay.classList.add('show');
+    const btnCompletar = document.getElementById('modal-btn-completar');
+    const btnGuardar = document.getElementById('modal-btn-guardar-igual');
+    function cleanup(result){
+      overlay.classList.remove('show');
+      btnCompletar.removeEventListener('click', onCompletar);
+      btnGuardar.removeEventListener('click', onGuardarIgual);
+      resolve(result);
+    }
+    function onCompletar(){ cleanup(false); }
+    function onGuardarIgual(){ cleanup(true); }
+    btnCompletar.addEventListener('click', onCompletar);
+    btnGuardar.addEventListener('click', onGuardarIgual);
+  });
+}
+
+/* ---------- TABS ---------- */
+document.querySelectorAll('nav.tabs button').forEach(btn=>{
+  btn.addEventListener('click', ()=>{
+    document.querySelectorAll('nav.tabs button').forEach(b=>b.classList.remove('active'));
+    btn.classList.add('active');
+    document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
+    document.getElementById('view-'+btn.dataset.view).classList.add('active');
+    if(btn.dataset.view==='registro') renderRegistro();
+    if(btn.dataset.view==='chofer') renderChofer();
+    if(btn.dataset.view==='config') renderConfig();
+    if(btn.dataset.view==='nuevo') updatePreviewTicket();
+  });
+});
+
+/* ---------- SEGMENTED CONTROLS (generic) ---------- */
+function wireSegmented(id, onChange){
+  const el = document.getElementById(id);
+  el.querySelectorAll('button').forEach(b=>{
+    b.addEventListener('click', ()=>{
+      el.querySelectorAll('button').forEach(x=>x.classList.remove('on'));
+      b.classList.add('on');
+      onChange(b.dataset.val);
+    });
+  });
+}
+function setSegOn(id, val){
+  const el = document.getElementById(id);
+  el.querySelectorAll('button').forEach(b=>b.classList.toggle('on', b.dataset.val===val));
+}
+wireSegmented('seg-pago', v=>{ seg.pago=v; onPagoChange(); });
+wireSegmented('seg-estadopago', v=>{ seg.estadopago=v; });
+wireSegmented('seg-tarifa', v=>{ seg.tarifa=v; });
+
+document.getElementById('btn-toggle-pegado').addEventListener('click', ()=>{
+  const content = document.getElementById('pegado-content');
+  const btn = document.getElementById('btn-toggle-pegado');
+  const showing = content.style.display !== 'none';
+  content.style.display = showing ? 'none' : 'block';
+  btn.textContent = showing ? 'Mostrar' : 'Ocultar';
+});
+
+function onPagoChange(){
+  const estadoGrp = document.getElementById('grp-estadopago');
+  const valorInput = document.getElementById('f-valor');
+  if(seg.pago==='seguro'){
+    estadoGrp.style.display='none';
+    if(!valorInput.dataset.touched) valorInput.value = 0;
+  } else {
+    estadoGrp.style.display='block';
+  }
+}
+
+/* ---------- FORM: tipo de servicio ---------- */
+function fillTipoSelect(){
+  const sel = document.getElementById('f-tipo');
+  sel.innerHTML = '';
+  config.serviceTypes.forEach(t=>{
+    const opt = document.createElement('option');
+    opt.value = t.id; opt.textContent = t.nombre;
+    sel.appendChild(opt);
+  });
+  sel.onchange = onTipoChange;
+  onTipoChange();
+}
+function onTipoChange(){
+  const t = tipoById(document.getElementById('f-tipo').value);
+  const esTraslado = t && t.esTraslado;
+  document.getElementById('grp-traslado').style.display = esTraslado ? 'flex' : 'none';
+  document.getElementById('grp-links').style.display = esTraslado ? 'flex' : 'none';
+  document.getElementById('grp-tarifa').style.display = (t && !esTraslado) ? 'flex' : 'none';
+}
+document.getElementById('btn-abrir-origen').addEventListener('click', ()=>{
+  const url = document.getElementById('f-link-origen').value.trim();
+  if(!url){ toast('Pegá primero un link de Maps'); return; }
+  window.open(url, '_blank');
+});
+document.getElementById('btn-abrir-destino').addEventListener('click', ()=>{
+  const url = document.getElementById('f-link-destino').value.trim();
+  if(!url){ toast('Pegá primero un link de Maps'); return; }
+  window.open(url, '_blank');
+});
+
+function updatePreviewTicket(){
+  document.getElementById('preview-ticket').textContent = editingId ? servicios.find(s=>s.id===editingId).ticket : ticketFmt(config.nextTicket);
+}
+
+/* ---------- GUARDAR ---------- */
+document.getElementById('btn-limpiar').addEventListener('click', ()=>{ resetForm(); });
+document.getElementById('btn-guardar').addEventListener('click', onGuardar);
+
+function resetForm(){
+  editingId = null;
+  document.getElementById('f-pegado').value='';
+  document.getElementById('f-cliente').value='';
+  document.getElementById('f-telefono').value='';
+  document.getElementById('f-marca').value='';
+  document.getElementById('f-modelo').value='';
+  document.getElementById('f-patente').value='';
+  document.getElementById('f-origen').value='';
+  document.getElementById('f-destino').value='';
+  document.getElementById('f-link-origen').value='';
+  document.getElementById('f-link-destino').value='';
+  document.getElementById('f-valor').value='';
+  document.getElementById('f-valor').dataset.touched='';
+  document.getElementById('f-notas').value='';
+  document.getElementById('form-error').style.display='none';
+  document.getElementById('btn-guardar').textContent = 'Guardar servicio';
+  seg.pago='particular'; seg.estadopago='pendiente'; seg.tarifa='tarifa1';
+  setSegOn('seg-pago','particular'); setSegOn('seg-estadopago','pendiente'); setSegOn('seg-tarifa','tarifa1');
+  document.getElementById('f-tipo').selectedIndex = 0;
+  onTipoChange();
+  onPagoChange();
+  updatePreviewTicket();
+}
+
+async function onGuardar(){
+  const cliente = document.getElementById('f-cliente').value.trim();
+  const telefono = document.getElementById('f-telefono').value.trim();
+  const tipoId = document.getElementById('f-tipo').value;
+  const tipo = tipoById(tipoId);
+
+  if(!tipo){
+    toast('Primero agregá un tipo de servicio en Configuración');
+    return;
+  }
+
+  const faltantes = [];
+  if(!cliente) faltantes.push('Cliente');
+  if(!telefono) faltantes.push('Teléfono');
+  if(tipo.esTraslado){
+    if(!document.getElementById('f-origen').value.trim()) faltantes.push('Origen');
+    if(!document.getElementById('f-destino').value.trim()) faltantes.push('Destino');
+  }
+  if(document.getElementById('f-valor').value.trim()==='') faltantes.push('Valor');
+
+  if(faltantes.length && config.alertarFaltantes !== false){
+    const continuar = await mostrarModalFaltantes(faltantes);
+    if(!continuar) return;
+  }
+
+  const record = {
+    id: editingId || (Date.now()+'-'+Math.random().toString(36).slice(2,7)),
+    ticket: editingId ? servicios.find(s=>s.id===editingId).ticket : ticketFmt(config.nextTicket),
+    fecha: editingId ? servicios.find(s=>s.id===editingId).fecha : new Date().toISOString(),
+    cliente, telefono,
+    marca: document.getElementById('f-marca').value.trim(),
+    modelo: document.getElementById('f-modelo').value.trim(),
+    patente: document.getElementById('f-patente').value.trim(),
+    tipoServicioId: tipo.id,
+    tipoServicioNombre: tipo.nombre,
+    esTraslado: tipo.esTraslado,
+    origen: tipo.esTraslado ? document.getElementById('f-origen').value.trim() : '',
+    destino: tipo.esTraslado ? document.getElementById('f-destino').value.trim() : '',
+    linkOrigen: tipo.esTraslado ? document.getElementById('f-link-origen').value.trim() : '',
+    linkDestino: tipo.esTraslado ? document.getElementById('f-link-destino').value.trim() : '',
+    tarifaUsada: !tipo.esTraslado ? seg.tarifa : null,
+    pago: seg.pago,
+    estadoPago: editingId ? servicios.find(s=>s.id===editingId).estadoPago : 'pendiente',
+    valor: Number(document.getElementById('f-valor').value)||0,
+    medioPago: editingId ? (servicios.find(s=>s.id===editingId).medioPago || '') : '',
+    finalizado: editingId ? !!servicios.find(s=>s.id===editingId).finalizado : false,
+    notas: document.getElementById('f-notas').value.trim()
+  };
+  if(seg.pago==='particular') record.estadoPago = seg.estadopago; else record.estadoPago = 'n/a';
+
+  if(editingId){
+    const idx = servicios.findIndex(s=>s.id===editingId);
+    const prev = servicios[idx];
+    servicios[idx] = record;
+    const ok = await saveAll();
+    if(ok){ toast('Servicio actualizado'); resetForm(); }
+    else { servicios[idx] = prev; }
+  }else{
+    servicios.unshift(record);
+    config.nextTicket += 1;
+    const ok = await saveAll();
+    if(ok){ toast('Servicio guardado'); resetForm(); }
+    else { servicios.shift(); config.nextTicket -= 1; }
+  }
+  renderRegistro();
+}
+
+/* ---------- AUTOCOMPLETAR DESDE TEXTO PEGADO ---------- */
+function normLabel(s){
+  return s.toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g,'')
+    .replace(/[^a-z0-9 ]/g,'')
+    .trim();
+}
+function parseAsistencia(texto){
+  const out = {};
+  const lines = texto.split('\n');
+  let currentKey = null;
+  const re = /^\s*\*?\s*([^:*][^:]*?)\s*:\s*(.*)$/;
+  lines.forEach(raw=>{
+    const line = raw.replace(/\r/,'');
+    const m = line.match(re);
+    if(m && m[1].split(' ').length <= 6){
+      currentKey = normLabel(m[1]);
+      out[currentKey] = (out[currentKey] ? out[currentKey]+' ' : '') + m[2].trim();
+    } else if(currentKey && line.trim() && !/^\*?\s*$/.test(line)){
+      out[currentKey] += ' ' + line.replace(/^\*/,'').trim();
+    }
+  });
+  return out;
+}
+document.getElementById('btn-autocompletar').addEventListener('click', ()=>{
+  const texto = document.getElementById('f-pegado').value;
+  if(!texto.trim()){ toast('Pegá primero el texto de la asistencia'); return; }
+  const d = parseAsistencia(texto);
+
+  if(d['asegurado']) document.getElementById('f-cliente').value = d['asegurado'];
+  if(d['telefono del asegurado']) document.getElementById('f-telefono').value = d['telefono del asegurado'];
+
+  if(d['vehiculo a asistir']){
+    const parts = d['vehiculo a asistir'].trim().split(' ');
+    document.getElementById('f-marca').value = parts.shift() || '';
+    document.getElementById('f-modelo').value = parts.join(' ');
+  }
+  if(d['patente del vehiculo a asistir']) document.getElementById('f-patente').value = d['patente del vehiculo a asistir'].replace(/\s+/g,'');
+
+  if(d['origen']) document.getElementById('f-origen').value = d['origen'];
+  if(d['destino']) document.getElementById('f-destino').value = d['destino'];
+
+  const notas = [];
+  if(d['id asistencia']) notas.push('ID Asistencia: ' + d['id asistencia']);
+  if(d['observaciones']) notas.push('Observaciones: ' + d['observaciones']);
+  if(d['informacion tecnica']) notas.push('Info técnica: ' + d['informacion tecnica']);
+  if(notas.length) document.getElementById('f-notas').value = notas.join(' | ');
+
+  const tipoTexto = normLabel(d['tipo de asistencia'] || '');
+  let tipoMatch = null;
+  if(tipoTexto){
+    tipoMatch = config.serviceTypes.find(t=> t.esTraslado && (tipoTexto.includes('acarreo') || tipoTexto.includes('traslado')));
+    if(!tipoMatch) tipoMatch = config.serviceTypes.find(t=> normLabel(t.nombre).includes(tipoTexto) || tipoTexto.includes(normLabel(t.nombre)));
+  }
+  if(tipoMatch) document.getElementById('f-tipo').value = tipoMatch.id;
+
+  seg.pago = 'seguro';
+  setSegOn('seg-pago','seguro');
+  const valorInput = document.getElementById('f-valor');
+  valorInput.dataset.touched = '';
+  valorInput.value = 0;
+
+  onTipoChange();
+  onPagoChange();
+  toast('Datos completados desde el texto pegado');
+});
+
+/* ---------- REGISTRO ---------- */
+function renderRegistro(){
+  const filtTipo = document.getElementById('filt-tipo');
+  if(filtTipo.dataset.built !== '1' || filtTipo.options.length-1 !== config.serviceTypes.length){
+    filtTipo.innerHTML = '<option value="">Todos los tipos</option>';
+    config.serviceTypes.forEach(t=>{
+      const o=document.createElement('option'); o.value=t.id; o.textContent=t.nombre; filtTipo.appendChild(o);
+    });
+    filtTipo.dataset.built='1';
+  }
+
+  const list = filteredServicios();
+  const tbody = document.getElementById('tbl-registro-body');
+  tbody.innerHTML = '';
+  document.getElementById('registro-empty').style.display = list.length ? 'none' : 'block';
+
+  list.forEach(s=>{
+    const tr = document.createElement('tr');
+    const vehiculo = [s.marca, s.modelo].filter(Boolean).join(' ') + (s.patente ? ' · '+s.patente : '');
+    const pagoBadge = s.pago==='seguro'
+      ? '<span class="badge seguro">Seguro</span>'
+      : `<span class="badge ${s.estadoPago==='pagado'?'pagado':'pendiente'}">${s.estadoPago==='pagado'?'Pagado':'Pendiente'}</span>`;
+    const medioPagoBadge = s.medioPago ? `<div style="margin-top:3px;"><span class="badge neutro">${s.medioPago==='efectivo'?'💵 Efectivo':'🏦 Transferencia'}</span></div>` : '';
+    const finalizadoBadge = `<div style="margin-top:3px;"><span class="badge ${s.finalizado?'finalizado':'neutro'}">${s.finalizado?'Finalizado':'En curso'}</span></div>`;
+    tr.innerHTML = `
+      <td><span class="ticket">${s.ticket}</span></td>
+      <td>${fmtFecha(s.fecha)}</td>
+      <td>${escapeHtml(s.cliente)}<div style="font-size:11px;color:var(--text-faint)">${escapeHtml(s.telefono)}</div></td>
+      <td>${escapeHtml(s.tipoServicioNombre)}${s.esTraslado ? '<div style="font-size:11px;color:var(--text-faint)">'+escapeHtml(s.origen)+' → '+escapeHtml(s.destino)+'</div>' : ''}</td>
+      <td>${escapeHtml(vehiculo)||'—'}</td>
+      <td>${pagoBadge}${medioPagoBadge}${finalizadoBadge}</td>
+      <td>${fmtMoney(s.valor)}</td>
+      <td>
+        <button class="btn small" data-act="link" data-id="${s.id}">Link</button>
+        <button class="btn small" data-act="copiar" data-id="${s.id}">Copiar</button>
+        <button class="btn small" data-act="editar" data-id="${s.id}">Editar</button>
+        <button class="btn small danger" data-act="borrar" data-id="${s.id}">Borrar</button>
+      </td>
+    `;
+    tbody.appendChild(tr);
+  });
+
+  tbody.querySelectorAll('button').forEach(b=>{
+    b.addEventListener('click', ()=>{
+      const id = b.dataset.id;
+      if(b.dataset.act==='copiar') copiarServicio(id);
+      if(b.dataset.act==='editar') editarServicio(id);
+      if(b.dataset.act==='borrar') borrarServicio(id);
+      if(b.dataset.act==='link') copiarLinkServicio(id);
+    });
+  });
+
+  const totalCobrado = list.reduce((a,s)=> a + (s.pago==='particular' ? s.valor : 0), 0);
+  const totalPendienteCobro = list.reduce((a,s)=> a + (s.pago==='particular' && s.estadoPago!=='pagado' ? s.valor : 0), 0);
+  const metrics = document.getElementById('metrics-registro');
+  metrics.innerHTML = `
+    <div class="metric orange"><div class="lbl">Servicios listados</div><div class="val">${list.length}</div></div>
+    <div class="metric green"><div class="lbl">Total facturado particular</div><div class="val">${fmtMoney(totalCobrado)}</div></div>
+    <div class="metric yellow"><div class="lbl">Pendiente de cobro</div><div class="val">${fmtMoney(totalPendienteCobro)}</div></div>
+  `;
+}
+function filteredServicios(){
+  const tipo = document.getElementById('filt-tipo').value;
+  const pago = document.getElementById('filt-pago').value;
+  const estado = document.getElementById('filt-estado').value;
+  const texto = document.getElementById('filt-texto').value.trim().toLowerCase();
+  return servicios.filter(s=>{
+    if(tipo && s.tipoServicioId!==tipo) return false;
+    if(pago && s.pago!==pago) return false;
+    if(estado && s.estadoPago!==estado) return false;
+    if(texto){
+      const hay = (s.cliente+' '+s.patente+' '+s.telefono+' '+s.marca+' '+s.modelo).toLowerCase();
+      if(!hay.includes(texto)) return false;
+    }
+    return true;
+  });
+}
+['filt-tipo','filt-pago','filt-estado'].forEach(id=>document.getElementById(id).addEventListener('change', renderRegistro));
+document.getElementById('filt-texto').addEventListener('input', renderRegistro);
+
+function buildResumenTexto(s){
+  const lineas = [];
+  lineas.push(`🛠️ Servicio: ${s.tipoServicioNombre}`);
+  lineas.push(`👤 Cliente: ${s.cliente}`);
+  lineas.push(`📞 Teléfono: ${s.telefono}`);
+  if(s.esTraslado){
+    lineas.push(`📍 Origen: ${s.origen}`);
+    if(s.linkOrigen) lineas.push(`🔗 Link origen: ${s.linkOrigen}`);
+    lineas.push(`📍 Destino: ${s.destino}`);
+    if(s.linkDestino) lineas.push(`🔗 Link destino: ${s.linkDestino}`);
+  } else if(s.tarifaUsada && config.tarifas[s.tarifaUsada]){
+    lineas.push(`💲 Tarifa: ${config.tarifas[s.tarifaUsada].nombre}`);
+  }
+  const vehiculo = [s.marca, s.modelo].filter(Boolean).join(' ');
+  if(vehiculo) lineas.push(`🚗 Vehículo: ${vehiculo}`);
+  if(s.patente) lineas.push(`🔢 Patente: ${s.patente}`);
+  if(s.notas) lineas.push(`📝 Notas: ${s.notas}`);
+  lineas.push(`💲 Valor: ${fmtMoney(s.valor)}`);
+  const tipoPago = s.pago==='seguro' ? 'Seguro' : ('Particular' + (s.estadoPago==='pagado' ? ' (Pagado)' : ' (Pendiente)'));
+  lineas.push(`🛡️ Seguro/Particular: ${tipoPago}`);
+  return lineas.join('\n');
+}
+function copiarServicio(id){
+  const s = servicios.find(x=>x.id===id);
+  if(s) copyText(buildResumenTexto(s));
+}
+function copiarLinkServicio(id){
+  const url = location.origin + location.pathname + '#servicio=' + id;
+  copyText(url);
+}
+function editarServicio(id){
+  const s = servicios.find(x=>x.id===id);
+  if(!s) return;
+  editingId = id;
+  document.querySelector('nav.tabs button[data-view="nuevo"]').click();
+  document.getElementById('f-tipo').value = s.tipoServicioId;
+  onTipoChange();
+  document.getElementById('f-cliente').value = s.cliente;
+  document.getElementById('f-telefono').value = s.telefono;
+  document.getElementById('f-marca').value = s.marca;
+  document.getElementById('f-modelo').value = s.modelo;
+  document.getElementById('f-patente').value = s.patente;
+  document.getElementById('f-origen').value = s.origen;
+  document.getElementById('f-destino').value = s.destino;
+  document.getElementById('f-link-origen').value = s.linkOrigen || '';
+  document.getElementById('f-link-destino').value = s.linkDestino || '';
+  if(s.tarifaUsada){ seg.tarifa = s.tarifaUsada; setSegOn('seg-tarifa', s.tarifaUsada); }
+  seg.pago = s.pago; setSegOn('seg-pago', s.pago); onPagoChange();
+  if(s.pago==='particular'){ seg.estadopago = s.estadoPago; setSegOn('seg-estadopago', s.estadoPago); }
+  const valorInput = document.getElementById('f-valor');
+  valorInput.value = s.valor; valorInput.dataset.touched='1';
+  document.getElementById('f-notas').value = s.notas;
+  document.getElementById('btn-guardar').textContent = 'Guardar cambios';
+  updatePreviewTicket();
+}
+async function borrarServicio(id){
+  if(!confirm('¿Borrar este servicio del registro? Esta acción no se puede deshacer.')) return;
+  const prev = servicios;
+  servicios = servicios.filter(s=>s.id!==id);
+  const ok = await saveAll();
+  if(ok){ renderRegistro(); toast('Servicio eliminado'); }
+  else { servicios = prev; }
+}
+
+/* ---------- VISTA CHOFER ---------- */
+function renderChofer(){
+  const filtro = document.getElementById('chofer-filtro').value;
+  let list = servicios.filter(s=> s.pago==='particular');
+  if(filtro==='pendientes') list = list.filter(s=> !s.medioPago || !s.finalizado);
+
+  const wrap = document.getElementById('chofer-list');
+  wrap.innerHTML = '';
+  document.getElementById('chofer-empty').style.display = list.length ? 'none' : 'block';
+
+  list.forEach(s=>{
+    const vehiculo = [s.marca, s.modelo].filter(Boolean).join(' ');
+    const tipoObj = tipoById(s.tipoServicioId);
+    let lineaExtra = '';
+    if(s.esTraslado){
+      const corte = calcCorteChofer(tipoObj, s.valor);
+      if(corte!==null) lineaExtra = ` · Te corresponde: ${fmtMoney(corte)}`;
+    } else if(s.tarifaUsada && config.tarifas[s.tarifaUsada]){
+      lineaExtra = ` · Tarifa: ${escapeHtml(config.tarifas[s.tarifaUsada].nombre)}`;
+    }
+    const div = document.createElement('div');
+    div.className = 'config-item';
+    div.innerHTML = `
+      <div class="name">
+        <span class="ticket">${s.ticket}</span> ${escapeHtml(s.tipoServicioNombre)}
+        <div style="color:var(--text-dim); font-size:12.5px; margin-top:3px;">${escapeHtml(s.cliente)}${vehiculo ? ' · '+escapeHtml(vehiculo) : ''}</div>
+        <div style="font-family:var(--mono); font-size:12.5px; margin-top:3px;">Cobrar: ${fmtMoney(s.valor)}${lineaExtra}</div>
+      </div>
+      <div style="display:flex; flex-direction:column; gap:6px;">
+        <div class="segmented" style="min-width:220px;">
+          <button type="button" data-act="finalizado-toggle" data-id="${s.id}" class="${s.finalizado?'on':''}">${s.finalizado?'✓ Finalizado':'Marcar finalizado'}</button>
+        </div>
+        <div class="segmented" style="min-width:220px;">
+          <button type="button" data-act="efectivo" data-id="${s.id}" class="${s.medioPago==='efectivo'?'on':''}">💵 Efectivo</button>
+          <button type="button" data-act="transferencia" data-id="${s.id}" class="${s.medioPago==='transferencia'?'on':''}">🏦 Transferencia</button>
+        </div>
+      </div>
+    `;
+    wrap.appendChild(div);
+  });
+
+  wrap.querySelectorAll('button').forEach(b=>{
+    b.addEventListener('click', ()=>{
+      const s = servicios.find(x=>x.id===b.dataset.id);
+      if(!s) return;
+      aplicarAccionPago(s, b.dataset.act, renderChofer);
+    });
+  });
+}
+document.getElementById('chofer-filtro').addEventListener('change', renderChofer);
+
+async function aplicarAccionPago(s, accion, onDone){
+  if(accion==='finalizado-toggle'){
+    s.finalizado = !s.finalizado;
+  } else {
+    const nuevoMedio = s.medioPago===accion ? '' : accion;
+    s.medioPago = nuevoMedio;
+    s.estadoPago = nuevoMedio ? 'pagado' : 'pendiente';
+  }
+  const ok = await saveAll();
+  if(ok){ toast('Guardado'); onDone(); }
+  else { toast('No se pudo guardar. Probá de nuevo.'); }
+}
+
+/* ---------- VISTA DE UN SOLO SERVICIO (link para el chofer) ---------- */
+function renderSoloServicio(id){
+  document.getElementById('app-root').style.display='none';
+  document.getElementById('solo-root').style.display='block';
+  renderSoloCard(id);
+}
+function renderSoloCard(id){
+  const s = servicios.find(x=>x.id===id);
+  const card = document.getElementById('solo-card');
+  if(!s){
+    card.innerHTML = '<div class="empty">No se encontró este servicio. Puede que haya sido borrado.</div>';
+    return;
+  }
+  const vehiculo = [s.marca, s.modelo].filter(Boolean).join(' ');
+  const tipoObj = tipoById(s.tipoServicioId);
+  let lineaExtra = '';
+  if(s.esTraslado){
+    const corte = calcCorteChofer(tipoObj, s.valor);
+    if(corte!==null){
+      const pct = tipoObj.comision.tipo==='porcentaje' ? ` (${tipoObj.comision.valor}%)` : '';
+      lineaExtra = `<div>🚚 Se lleva el chofer: <b>${fmtMoney(corte)}</b>${pct}</div>`;
+    }
+  } else if(s.tarifaUsada && config.tarifas[s.tarifaUsada]){
+    lineaExtra = `<div>💲 Tarifa: ${escapeHtml(config.tarifas[s.tarifaUsada].nombre)}</div>`;
+  }
+  card.innerHTML = `
+    <h2>${escapeHtml(s.tipoServicioNombre)} <span class="ticket">${s.ticket}</span></h2>
+    <div style="line-height:1.9; font-size:14.5px; margin-bottom:16px;">
+      <div>👤 <b>${escapeHtml(s.cliente)}</b></div>
+      <div>📞 ${escapeHtml(s.telefono)}</div>
+      ${vehiculo ? `<div>🚗 ${escapeHtml(vehiculo)}</div>` : ''}
+      ${s.patente ? `<div>🔢 Patente: ${escapeHtml(s.patente)}</div>` : ''}
+      ${s.esTraslado ? `
+        <div>📍 Origen: ${escapeHtml(s.origen)}</div>
+        ${s.linkOrigen ? `<div>🔗 <a href="${escapeHtml(s.linkOrigen)}" target="_blank" style="color:var(--orange);">Ver origen en Maps</a></div>` : ''}
+        <div>📍 Destino: ${escapeHtml(s.destino)}</div>
+        ${s.linkDestino ? `<div>🔗 <a href="${escapeHtml(s.linkDestino)}" target="_blank" style="color:var(--orange);">Ver destino en Maps</a></div>` : ''}
+      ` : ''}
+      ${s.notas ? `<div>📝 ${escapeHtml(s.notas)}</div>` : ''}
+      <div>💲 Valor: ${fmtMoney(s.valor)}</div>
+      ${lineaExtra}
+      <div>🛡️ ${s.pago==='seguro' ? 'Seguro' : 'Particular'}</div>
+    </div>
+    <div class="row">
+      <div class="field">
+        <label>Estado del servicio</label>
+        <div class="segmented" id="solo-seg-estado">
+          <button type="button" data-val="pendiente" class="${!s.finalizado?'on':''}">Pendiente</button>
+          <button type="button" data-val="finalizado" class="${s.finalizado?'on':''}">Finalizado</button>
+        </div>
+      </div>
+    </div>
+    ${s.pago==='particular' ? `
+    <div class="row">
+      <div class="field">
+        <label>¿Cómo pagó el cliente?</label>
+        <div class="segmented" id="solo-seg-pago">
+          <button type="button" data-val="efectivo" class="${s.medioPago==='efectivo'?'on':''}">💵 Efectivo</button>
+          <button type="button" data-val="transferencia" class="${s.medioPago==='transferencia'?'on':''}">🏦 Transferencia</button>
+        </div>
+      </div>
+    </div>` : ''}
+    <div class="hint" id="solo-guardado-hint" style="margin-top:8px; min-height:16px;"></div>
+  `;
+  document.getElementById('solo-seg-estado').querySelectorAll('button').forEach(b=>{
+    b.addEventListener('click', async ()=>{
+      s.finalizado = b.dataset.val==='finalizado';
+      const ok = await saveAll();
+      if(ok){ renderSoloCard(id); flashSoloGuardado(); }
+    });
+  });
+  const pagoSeg = document.getElementById('solo-seg-pago');
+  if(pagoSeg){
+    pagoSeg.querySelectorAll('button').forEach(b=>{
+      b.addEventListener('click', async ()=>{
+        const nuevo = s.medioPago===b.dataset.val ? '' : b.dataset.val;
+        s.medioPago = nuevo;
+        s.estadoPago = nuevo ? 'pagado' : 'pendiente';
+        const ok = await saveAll();
+        if(ok){ renderSoloCard(id); flashSoloGuardado(); }
+      });
+    });
+  }
+}
+function flashSoloGuardado(){
+  const h = document.getElementById('solo-guardado-hint');
+  if(!h) return;
+  h.textContent = '✓ Guardado';
+  setTimeout(()=>{ if(h) h.textContent=''; }, 2000);
+}
+
+/* ---------- CONFIG ---------- */
+function renderConfig(){
+  setSegOn('seg-alertar', config.alertarFaltantes===false ? 'no' : 'si');
+
+  const wrap = document.getElementById('config-tipos');
+  wrap.innerHTML = '';
+  config.serviceTypes.forEach(t=>{
+    const div = document.createElement('div');
+    div.className = 'config-item';
+    div.innerHTML = `
+      <div class="name">${escapeHtml(t.nombre)} ${t.esTraslado ? '<span class="badge seguro">Traslado</span>' : ''}</div>
+      ${t.esTraslado && t.comision ? `<div style="font-family:var(--mono); font-size:12px; color:var(--text-dim);">Chofer: ${t.comision.tipo==='fijo' ? fmtMoney(t.comision.valor) : t.comision.valor+'%'}</div>` : ''}
+      <button class="btn small" data-act="edit-tipo" data-id="${t.id}">Editar</button>
+      <button class="btn small danger" data-act="del-tipo" data-id="${t.id}">Eliminar</button>
+    `;
+    wrap.appendChild(div);
+  });
+  wrap.querySelectorAll('button').forEach(b=>{
+    b.addEventListener('click', ()=>{
+      if(b.dataset.act==='del-tipo') delTipo(b.dataset.id);
+      if(b.dataset.act==='edit-tipo') editTipoPrompt(b.dataset.id);
+    });
+  });
+
+  document.getElementById('cfg-tarifa1-nombre').value = config.tarifas.tarifa1.nombre;
+  document.getElementById('cfg-tarifa1-valor').value = config.tarifas.tarifa1.valor;
+  document.getElementById('cfg-tarifa2-nombre').value = config.tarifas.tarifa2.nombre;
+  document.getElementById('cfg-tarifa2-valor').value = config.tarifas.tarifa2.valor;
+}
+wireSegmented('seg-alertar', async v=>{
+  config.alertarFaltantes = (v==='si');
+  const ok = await saveAll();
+  if(ok) toast('Preferencia guardada');
+});
+async function delTipo(id){
+  if(config.serviceTypes.length<=1){ toast('Debe quedar al menos un tipo de servicio'); return; }
+  if(!confirm('¿Eliminar este tipo de servicio? Los registros ya guardados no se modifican.')) return;
+  const prev = config.serviceTypes;
+  config.serviceTypes = config.serviceTypes.filter(t=>t.id!==id);
+  const ok = await saveAll();
+  if(ok){ renderConfig(); fillTipoSelect(); toast('Tipo eliminado'); }
+  else { config.serviceTypes = prev; }
+}
+function editTipoPrompt(id){
+  const t = tipoById(id);
+  const nombre = prompt('Nombre del tipo de servicio:', t.nombre);
+  if(nombre===null) return;
+  const esTraslado = confirm('¿Es un traslado? Aceptar = Sí, Cancelar = No');
+  t.nombre = nombre.trim() || t.nombre;
+  t.esTraslado = esTraslado;
+  if(esTraslado){
+    const comTipo = confirm('¿Cuánto se lleva el chofer por porcentaje? Aceptar = Porcentaje, Cancelar = Monto fijo') ? 'porcentaje' : 'fijo';
+    const comValor = prompt('Valor ('+(comTipo==='porcentaje'?'% del servicio':'monto fijo $')+'):', (t.comision && t.comision.valor) || 60);
+    if(comValor===null) return;
+    t.comision = { tipo: comTipo, valor: Number(comValor)||0 };
+  } else {
+    delete t.comision;
+  }
+  saveAll().then(ok=>{ if(ok){ renderConfig(); fillTipoSelect(); toast('Tipo actualizado'); } });
+}
+wireSegmented('new-tipo-traslado', v=>{
+  document.getElementById('grp-new-tipo-comision').style.display = v==='si' ? 'flex' : 'none';
+});
+wireSegmented('new-tipo-comtipo', ()=>{});
+document.getElementById('btn-add-tipo').addEventListener('click', async ()=>{
+  const nombre = document.getElementById('new-tipo-nombre').value.trim();
+  if(!nombre){ toast('Poné un nombre para el nuevo tipo'); return; }
+  const esTraslado = document.querySelector('#new-tipo-traslado button.on').dataset.val === 'si';
+  const nuevoTipo = { id: 'tipo-' + Date.now(), nombre, esTraslado };
+  if(esTraslado){
+    const comTipo = document.querySelector('#new-tipo-comtipo button.on').dataset.val;
+    const comValor = Number(document.getElementById('new-tipo-comvalor').value) || 0;
+    nuevoTipo.comision = { tipo: comTipo, valor: comValor };
+  }
+  config.serviceTypes.push(nuevoTipo);
+  const ok = await saveAll();
+  if(ok){
+    document.getElementById('new-tipo-nombre').value='';
+    renderConfig();
+    fillTipoSelect();
+    toast('Tipo de servicio agregado');
+  } else {
+    config.serviceTypes.pop();
+  }
+});
+document.getElementById('btn-guardar-tarifas').addEventListener('click', async ()=>{
+  const prev = deepClone(config.tarifas);
+  config.tarifas.tarifa1.nombre = document.getElementById('cfg-tarifa1-nombre').value.trim() || 'Tarifa 1';
+  config.tarifas.tarifa1.valor = Number(document.getElementById('cfg-tarifa1-valor').value) || 0;
+  config.tarifas.tarifa2.nombre = document.getElementById('cfg-tarifa2-nombre').value.trim() || 'Tarifa 2';
+  config.tarifas.tarifa2.valor = Number(document.getElementById('cfg-tarifa2-valor').value) || 0;
+  const ok = await saveAll();
+  if(ok) toast('Tarifas guardadas'); else config.tarifas = prev;
+});
+document.getElementById('btn-exportar').addEventListener('click', ()=>{
+  copyText(JSON.stringify({ config, servicios }, null, 2));
+});
+
+/* ---------- INIT ---------- */
+async function init(){
+  try{
+    await loadState();
+    const m = location.hash.match(/^#servicio=(.+)$/);
+    if(m){
+      renderSoloServicio(decodeURIComponent(m[1]));
+      return;
+    }
+    fillTipoSelect();
+    onPagoChange();
+    updatePreviewTicket();
+    renderRegistro();
+  }catch(e){
+    console.error('Error al iniciar la app:', e);
+    const b = document.getElementById('storage-banner');
+    if(b){
+      b.style.display='block';
+      b.style.background = '#4a1414';
+      b.style.color = '#ff9a9a';
+      b.textContent = '⚠️ Hubo un error al cargar la app: ' + (e && e.message ? e.message : 'error desconocido') + '. Recargá la página.';
+    }
+  }
+}
+init();
+</script>
+
+</body>
+</html>
