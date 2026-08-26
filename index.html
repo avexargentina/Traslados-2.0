@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="es">
 <head>
@@ -141,6 +140,7 @@
   .badge.seguro{ color:#8ab4ff; border-color:#8ab4ff; }
   .badge.neutro{ color:var(--text-dim); border-color:var(--line); }
   .badge.finalizado{ color:var(--green); border-color:var(--green); }
+  .badge.nopago{ color:var(--red); border-color:var(--red); }
 
   .empty{ text-align:center; padding:40px 20px; color:var(--text-faint); font-size:13.5px; }
 
@@ -293,6 +293,7 @@
             <div class="hint">A modo de referencia, para saber qué tarifa aplicó.</div>
           </div>
         </div>
+        <div class="hint" id="hint-comision-propia" style="display:none; margin-bottom:12px;"></div>
 
         <div class="row">
           <div class="field">
@@ -372,15 +373,30 @@
     <div class="view" id="view-chofer">
       <div class="card">
         <h2>Vista del chofer</h2>
-        <div class="hint" style="margin-bottom:12px;">Acá el chofer marca si el servicio está finalizado y cómo cobró (efectivo o transferencia). Se guarda al toque.</div>
-        <div class="filters">
-          <select id="chofer-filtro">
-            <option value="pendientes">Sin definir / no finalizados</option>
-            <option value="todos">Todos los particulares</option>
-          </select>
+        <div class="segmented" id="seg-chofer-vista" style="max-width:320px; margin-bottom:14px;">
+          <button type="button" data-val="cola" class="on">Cola de trabajo</button>
+          <button type="button" data-val="historial">Historial</button>
         </div>
-        <div id="chofer-list"></div>
-        <div class="empty" id="chofer-empty" style="display:none;">No hay servicios para mostrar acá.</div>
+
+        <div id="chofer-vista-cola">
+          <div class="hint" id="chofer-resumen" style="margin-bottom:12px; font-family:var(--mono); color:var(--text);"></div>
+          <div id="chofer-en-curso" style="display:none; margin-bottom:16px;"></div>
+          <div id="chofer-list"></div>
+          <div class="empty" id="chofer-empty" style="display:none;">No hay servicios para mostrar acá.</div>
+        </div>
+
+        <div id="chofer-vista-historial" style="display:none;">
+          <div class="filters">
+            <select id="historial-periodo">
+              <option value="hoy">Hoy</option>
+              <option value="semana">Esta semana</option>
+              <option value="todo" selected>Todo</option>
+            </select>
+          </div>
+          <div class="metrics" id="historial-metrics"></div>
+          <div id="historial-list"></div>
+          <div class="empty" id="historial-empty" style="display:none;">Todavía no finalizaste ningún servicio.</div>
+        </div>
       </div>
     </div>
 
@@ -405,12 +421,16 @@
         <div id="config-tipos"></div>
         <div class="row" style="margin-top:10px;">
           <div class="field"><label>Nombre nuevo tipo</label><input type="text" id="new-tipo-nombre" placeholder="Ej: Cambio de aceite"></div>
+        </div>
+        <div class="row">
           <div class="field">
-            <label>¿Es traslado?</label>
-            <div class="segmented" id="new-tipo-traslado">
-              <button type="button" data-val="no" class="on">No</button>
-              <button type="button" data-val="si">Sí</button>
+            <label>¿Cómo le corresponde al chofer?</label>
+            <div class="segmented" id="new-tipo-modo">
+              <button type="button" data-val="traslado">Traslado (%)</button>
+              <button type="button" data-val="tarifa" class="on">Usa Tarifa 1/2</button>
+              <button type="button" data-val="comision">Comisión propia</button>
             </div>
+            <div class="hint">"Traslado" pide origen/destino y calcula un % del valor. "Usa Tarifa 1/2" toma los montos configurados abajo. "Comisión propia" define su propio monto o % (por ejemplo, venta de batería).</div>
           </div>
         </div>
         <div class="row" id="grp-new-tipo-comision" style="display:none;">
@@ -488,6 +508,29 @@
   </div>
 </div>
 
+<!-- MODAL: finalizar servicio -->
+<div class="modal-overlay" id="modal-finalizar-overlay">
+  <div class="card modal-box">
+    <h2 style="border:none; margin-bottom:10px;">Finalizar servicio</h2>
+    <div id="modal-finalizar-pago-wrap" style="margin-bottom:14px;">
+      <label>¿Cómo pagó el cliente?</label>
+      <div class="segmented" id="modal-finalizar-pago">
+        <button type="button" data-val="efectivo">💵 Efectivo</button>
+        <button type="button" data-val="transferencia">🏦 Transferencia</button>
+        <button type="button" data-val="no_pago">🚫 No pagó</button>
+      </div>
+    </div>
+    <div class="field" style="margin-bottom:16px;">
+      <label>Comentario (opcional)</label>
+      <textarea id="modal-finalizar-comentario" rows="3" placeholder="Algo que quieras avisar sobre este servicio..."></textarea>
+    </div>
+    <div class="actions-row">
+      <button class="btn" id="modal-finalizar-cancelar">Cancelar</button>
+      <button class="btn primary" id="modal-finalizar-confirmar">Confirmar</button>
+    </div>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -505,12 +548,13 @@ function deepClone(obj){ return JSON.parse(JSON.stringify(obj)); }
 
 const DEFAULT_CONFIG = {
   nextTicket: 1,
+  nextOrden: 1,
   alertarFaltantes: true,
   serviceTypes: [
-    { id:'arranque', nombre:'Arranque de batería', esTraslado:false },
-    { id:'rueda', nombre:'Cambio de rueda', esTraslado:false },
+    { id:'arranque', nombre:'Arranque de batería', esTraslado:false, modoComision:'tarifa' },
+    { id:'rueda', nombre:'Cambio de rueda', esTraslado:false, modoComision:'tarifa' },
     { id:'traslado', nombre:'Traslado de moto', esTraslado:true, comision:{tipo:'porcentaje', valor:60} },
-    { id:'bateria', nombre:'Venta de batería', esTraslado:false }
+    { id:'bateria', nombre:'Venta de batería', esTraslado:false, modoComision:'comision', comision:{tipo:'fijo', valor:1500} }
   ],
   tarifas: {
     tarifa1: { nombre:'Tarifa 1', valor:8000 },
@@ -635,6 +679,17 @@ async function loadState(){
   }
   if(config.alertarFaltantes === undefined) config.alertarFaltantes = true;
   if(!config.tarifas) config.tarifas = deepClone(DEFAULT_CONFIG.tarifas);
+  if(!config.nextOrden) config.nextOrden = 1;
+  config.serviceTypes.forEach(t=>{
+    if(!t.esTraslado && !t.modoComision){
+      t.modoComision = (t.id==='bateria') ? 'comision' : 'tarifa';
+      if(t.modoComision==='comision' && !t.comision) t.comision = { tipo:'fijo', valor:1500 };
+    }
+  });
+  servicios.forEach(s=>{
+    if(!s.estadoTrabajo) s.estadoTrabajo = s.finalizado ? 'finalizado' : 'pendiente';
+    if(s.ordenChofer===undefined || s.ordenChofer===null) s.ordenChofer = config.nextOrden++;
+  });
   updateStorageBanner();
 }
 
@@ -682,10 +737,90 @@ function fmtFecha(iso){
 }
 function ticketFmt(n){ return 'OT-' + String(n).padStart(4,'0'); }
 function tipoById(id){ return config.serviceTypes.find(t=>t.id===id); }
-function calcCorteChofer(tipo, valor){
-  if(!tipo || !tipo.esTraslado || !tipo.comision) return null;
-  if(tipo.comision.tipo==='fijo') return Number(tipo.comision.valor)||0;
-  return Math.round((Number(valor)||0) * (Number(tipo.comision.valor)||0) / 100);
+function calcCorteChofer(tipo, s){
+  if(!tipo) return null;
+  const valor = s.valor;
+  if(tipo.esTraslado){
+    if(!tipo.comision) return null;
+    return tipo.comision.tipo==='fijo' ? (Number(tipo.comision.valor)||0) : Math.round((Number(valor)||0) * (Number(tipo.comision.valor)||0) / 100);
+  }
+  if(tipo.modoComision==='tarifa'){
+    const tarifa = s.tarifaUsada && config.tarifas[s.tarifaUsada];
+    return tarifa ? (Number(tarifa.valor)||0) : null;
+  }
+  if(tipo.modoComision==='comision' && tipo.comision){
+    return tipo.comision.tipo==='fijo' ? (Number(tipo.comision.valor)||0) : Math.round((Number(valor)||0) * (Number(tipo.comision.valor)||0) / 100);
+  }
+  return null;
+}
+
+/* ---------- ESTADO DE TRABAJO (pendiente / en_curso / finalizado) ---------- */
+let modalFinalizarId = null;
+let modalFinalizarOnDone = null;
+function abrirModalFinalizar(id, onDone){
+  const s = servicios.find(x=>x.id===id);
+  if(!s) return;
+  modalFinalizarId = id;
+  modalFinalizarOnDone = onDone;
+  document.getElementById('modal-finalizar-pago-wrap').style.display = s.pago==='particular' ? 'block' : 'none';
+  document.querySelectorAll('#modal-finalizar-pago button').forEach(b=>{
+    b.classList.toggle('on', b.dataset.val===s.medioPago);
+  });
+  document.getElementById('modal-finalizar-comentario').value = s.comentarioChofer || '';
+  document.getElementById('modal-finalizar-overlay').classList.add('show');
+}
+document.querySelectorAll('#modal-finalizar-pago button').forEach(b=>{
+  b.addEventListener('click', ()=>{
+    document.querySelectorAll('#modal-finalizar-pago button').forEach(x=>x.classList.remove('on'));
+    b.classList.add('on');
+  });
+});
+document.getElementById('modal-finalizar-cancelar').addEventListener('click', ()=>{
+  document.getElementById('modal-finalizar-overlay').classList.remove('show');
+  modalFinalizarId = null;
+});
+document.getElementById('modal-finalizar-confirmar').addEventListener('click', async ()=>{
+  const s = servicios.find(x=>x.id===modalFinalizarId);
+  if(!s){ document.getElementById('modal-finalizar-overlay').classList.remove('show'); return; }
+  const activo = document.querySelector('#modal-finalizar-pago button.on');
+  if(s.pago==='particular' && activo){
+    s.medioPago = activo.dataset.val;
+    s.estadoPago = (s.medioPago==='efectivo' || s.medioPago==='transferencia') ? 'pagado' : 'pendiente';
+  }
+  s.comentarioChofer = document.getElementById('modal-finalizar-comentario').value.trim();
+  s.estadoTrabajo = 'finalizado';
+  const ok = await saveAll();
+  document.getElementById('modal-finalizar-overlay').classList.remove('show');
+  if(ok){
+    toast('Finalizado');
+    if(modalFinalizarOnDone) modalFinalizarOnDone();
+  } else {
+    toast('No se pudo guardar. Probá de nuevo.');
+  }
+  modalFinalizarId = null;
+  modalFinalizarOnDone = null;
+});
+
+async function arrancarServicio(id, onDone){
+  const s = servicios.find(x=>x.id===id);
+  if(!s) return;
+  const otro = servicios.find(x=>x.estadoTrabajo==='en_curso' && x.id!==id);
+  if(otro){
+    otro.estadoTrabajo = 'pendiente';
+  }
+  s.estadoTrabajo = 'en_curso';
+  const ok = await saveAll();
+  if(ok){
+    toast(otro ? `Arrancado. Se pausó: ${otro.ticket}` : 'Arrancado');
+    onDone();
+  }
+}
+async function pausarServicio(id, onDone){
+  const s = servicios.find(x=>x.id===id);
+  if(!s) return;
+  s.estadoTrabajo = 'pendiente';
+  const ok = await saveAll();
+  if(ok){ toast('Pausado'); onDone(); }
 }
 function escapeHtml(s){
   return String(s||'').replace(/[&<>"']/g, c=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
@@ -721,7 +856,7 @@ document.querySelectorAll('nav.tabs button').forEach(btn=>{
     document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
     document.getElementById('view-'+btn.dataset.view).classList.add('active');
     if(btn.dataset.view==='registro') renderRegistro();
-    if(btn.dataset.view==='chofer') renderChofer();
+    if(btn.dataset.view==='chofer') renderChoferTab();
     if(btn.dataset.view==='config') renderConfig();
     if(btn.dataset.view==='nuevo') updatePreviewTicket();
   });
@@ -782,7 +917,14 @@ function onTipoChange(){
   const esTraslado = t && t.esTraslado;
   document.getElementById('grp-traslado').style.display = esTraslado ? 'flex' : 'none';
   document.getElementById('grp-links').style.display = esTraslado ? 'flex' : 'none';
-  document.getElementById('grp-tarifa').style.display = (t && !esTraslado) ? 'flex' : 'none';
+  document.getElementById('grp-tarifa').style.display = (t && !esTraslado && t.modoComision==='tarifa') ? 'flex' : 'none';
+  const hintComision = document.getElementById('hint-comision-propia');
+  if(t && !esTraslado && t.modoComision==='comision' && t.comision){
+    hintComision.style.display = 'block';
+    hintComision.textContent = 'El chofer se lleva ' + (t.comision.tipo==='fijo' ? fmtMoney(t.comision.valor) : t.comision.valor+'%') + ' por este servicio.';
+  } else {
+    hintComision.style.display = 'none';
+  }
 }
 document.getElementById('btn-abrir-origen').addEventListener('click', ()=>{
   const url = document.getElementById('f-link-origen').value.trim();
@@ -873,7 +1015,8 @@ async function onGuardar(){
     estadoPago: editingId ? servicios.find(s=>s.id===editingId).estadoPago : 'pendiente',
     valor: Number(document.getElementById('f-valor').value)||0,
     medioPago: editingId ? (servicios.find(s=>s.id===editingId).medioPago || '') : '',
-    finalizado: editingId ? !!servicios.find(s=>s.id===editingId).finalizado : false,
+    estadoTrabajo: editingId ? servicios.find(s=>s.id===editingId).estadoTrabajo : 'pendiente',
+    ordenChofer: editingId ? servicios.find(s=>s.id===editingId).ordenChofer : config.nextOrden,
     notas: document.getElementById('f-notas').value.trim()
   };
   if(seg.pago==='particular') record.estadoPago = seg.estadopago; else record.estadoPago = 'n/a';
@@ -888,9 +1031,10 @@ async function onGuardar(){
   }else{
     servicios.unshift(record);
     config.nextTicket += 1;
+    config.nextOrden += 1;
     const ok = await saveAll();
     if(ok){ toast('Servicio guardado'); resetForm(); }
-    else { servicios.shift(); config.nextTicket -= 1; }
+    else { servicios.shift(); config.nextTicket -= 1; config.nextOrden -= 1; }
   }
   renderRegistro();
 }
@@ -984,17 +1128,24 @@ function renderRegistro(){
     const pagoBadge = s.pago==='seguro'
       ? '<span class="badge seguro">Seguro</span>'
       : `<span class="badge ${s.estadoPago==='pagado'?'pagado':'pendiente'}">${s.estadoPago==='pagado'?'Pagado':'Pendiente'}</span>`;
-    const medioPagoBadge = s.medioPago ? `<div style="margin-top:3px;"><span class="badge neutro">${s.medioPago==='efectivo'?'💵 Efectivo':'🏦 Transferencia'}</span></div>` : '';
-    const finalizadoBadge = `<div style="margin-top:3px;"><span class="badge ${s.finalizado?'finalizado':'neutro'}">${s.finalizado?'Finalizado':'En curso'}</span></div>`;
+    const medioPagoBadge = s.medioPago ? `<div style="margin-top:3px;"><span class="badge ${s.medioPago==='no_pago'?'nopago':'neutro'}">${s.medioPago==='efectivo'?'💵 Efectivo':s.medioPago==='transferencia'?'🏦 Transferencia':'🚫 No pagó'}</span></div>` : '';
+    const estadoTrabajoClase = s.estadoTrabajo==='finalizado' ? 'finalizado' : (s.estadoTrabajo==='en_curso' ? 'pendiente' : 'neutro');
+    const estadoTrabajoTexto = s.estadoTrabajo==='finalizado' ? 'Finalizado' : (s.estadoTrabajo==='en_curso' ? 'En curso' : 'Pendiente');
+    const estadoTrabajoBadge = `<div style="margin-top:3px;"><span class="badge ${estadoTrabajoClase}">${estadoTrabajoTexto}</span></div>`;
+    const puedeReordenar = s.estadoTrabajo!=='finalizado';
     tr.innerHTML = `
       <td><span class="ticket">${s.ticket}</span></td>
       <td>${fmtFecha(s.fecha)}</td>
       <td>${escapeHtml(s.cliente)}<div style="font-size:11px;color:var(--text-faint)">${escapeHtml(s.telefono)}</div></td>
       <td>${escapeHtml(s.tipoServicioNombre)}${s.esTraslado ? '<div style="font-size:11px;color:var(--text-faint)">'+escapeHtml(s.origen)+' → '+escapeHtml(s.destino)+'</div>' : ''}</td>
       <td>${escapeHtml(vehiculo)||'—'}</td>
-      <td>${pagoBadge}${medioPagoBadge}${finalizadoBadge}</td>
+      <td>${pagoBadge}${medioPagoBadge}${estadoTrabajoBadge}</td>
       <td>${fmtMoney(s.valor)}</td>
       <td>
+        ${puedeReordenar ? `<div style="display:flex; gap:2px; margin-bottom:4px;">
+          <button class="btn small" data-act="subir" data-id="${s.id}" title="Subir en la cola">↑</button>
+          <button class="btn small" data-act="bajar" data-id="${s.id}" title="Bajar en la cola">↓</button>
+        </div>` : ''}
         <button class="btn small" data-act="link" data-id="${s.id}">Link</button>
         <button class="btn small" data-act="copiar" data-id="${s.id}">Copiar</button>
         <button class="btn small" data-act="editar" data-id="${s.id}">Editar</button>
@@ -1011,6 +1162,8 @@ function renderRegistro(){
       if(b.dataset.act==='editar') editarServicio(id);
       if(b.dataset.act==='borrar') borrarServicio(id);
       if(b.dataset.act==='link') copiarLinkServicio(id);
+      if(b.dataset.act==='subir') moverEnCola(id, -1);
+      if(b.dataset.act==='bajar') moverEnCola(id, 1);
     });
   });
 
@@ -1097,6 +1250,22 @@ function editarServicio(id){
   document.getElementById('btn-guardar').textContent = 'Guardar cambios';
   updatePreviewTicket();
 }
+function colaOrdenada(){
+  return servicios.filter(s=>s.estadoTrabajo!=='finalizado').sort((a,b)=>a.ordenChofer-b.ordenChofer);
+}
+async function moverEnCola(id, direccion){
+  const cola = colaOrdenada();
+  const idx = cola.findIndex(s=>s.id===id);
+  if(idx<0) return;
+  const vecinoIdx = idx + direccion;
+  if(vecinoIdx<0 || vecinoIdx>=cola.length) return;
+  const a = cola[idx], b = cola[vecinoIdx];
+  const tmp = a.ordenChofer;
+  a.ordenChofer = b.ordenChofer;
+  b.ordenChofer = tmp;
+  const ok = await saveAll();
+  if(ok) renderRegistro();
+}
 async function borrarServicio(id){
   if(!confirm('¿Borrar este servicio del registro? Esta acción no se puede deshacer.')) return;
   const prev = servicios;
@@ -1107,68 +1276,145 @@ async function borrarServicio(id){
 }
 
 /* ---------- VISTA CHOFER ---------- */
+function tarjetaChoferInfo(s){
+  const vehiculo = [s.marca, s.modelo].filter(Boolean).join(' ');
+  const tipoObj = tipoById(s.tipoServicioId);
+  let lineaExtra = '';
+  const corte = calcCorteChofer(tipoObj, s);
+  if(corte!==null){
+    lineaExtra = ` · Te corresponde: ${fmtMoney(corte)}`;
+  } else if(s.tarifaUsada && config.tarifas[s.tarifaUsada]){
+    lineaExtra = ` · Tarifa: ${escapeHtml(config.tarifas[s.tarifaUsada].nombre)}`;
+  }
+  const destino = s.esTraslado ? `<div style="font-size:12px; color:var(--text-dim); margin-top:2px;">📍 ${escapeHtml(s.origen)} → ${escapeHtml(s.destino)}</div>` : '';
+  return `
+    <div class="name">
+      <span class="ticket">${s.ticket}</span> ${escapeHtml(s.tipoServicioNombre)}
+      <div style="color:var(--text-dim); font-size:12.5px; margin-top:3px;">${escapeHtml(s.cliente)}${vehiculo ? ' · '+escapeHtml(vehiculo) : ''}</div>
+      ${destino}
+      <div style="font-family:var(--mono); font-size:12.5px; margin-top:3px;">Cobrar: ${fmtMoney(s.valor)}${lineaExtra}</div>
+    </div>`;
+}
+
 function renderChofer(){
-  const filtro = document.getElementById('chofer-filtro').value;
-  let list = servicios.filter(s=> s.pago==='particular');
-  if(filtro==='pendientes') list = list.filter(s=> !s.medioPago || !s.finalizado);
+  const enCurso = servicios.find(s=>s.estadoTrabajo==='en_curso');
+  const cola = colaOrdenada().filter(s=> !enCurso || s.id!==enCurso.id);
+
+  const resumen = document.getElementById('chofer-resumen');
+  resumen.textContent = `Tenés ${cola.length + (enCurso?1:0)} pendiente(s)` + (enCurso ? ` · Ahora: ${enCurso.tipoServicioNombre}` : '');
+
+  const wrapEnCurso = document.getElementById('chofer-en-curso');
+  if(enCurso){
+    wrapEnCurso.style.display = 'block';
+    wrapEnCurso.innerHTML = `
+      <div class="config-item" style="border:1px solid var(--orange); border-radius:6px; padding:12px; flex-direction:column; align-items:stretch;">
+        ${tarjetaChoferInfo(enCurso)}
+        <div style="display:flex; gap:8px; margin-top:10px; flex-wrap:wrap;">
+          <button class="btn small" data-act="pausar" data-id="${enCurso.id}">⏸ Pausar</button>
+          <button class="btn small primary" data-act="finalizar" data-id="${enCurso.id}">✓ Finalizar</button>
+        </div>
+      </div>
+    `;
+  } else {
+    wrapEnCurso.style.display = 'none';
+    wrapEnCurso.innerHTML = '';
+  }
 
   const wrap = document.getElementById('chofer-list');
   wrap.innerHTML = '';
-  document.getElementById('chofer-empty').style.display = list.length ? 'none' : 'block';
+  document.getElementById('chofer-empty').style.display = (cola.length || enCurso) ? 'none' : 'block';
+
+  cola.forEach((s, i)=>{
+    const div = document.createElement('div');
+    div.className = 'config-item';
+    div.innerHTML = `
+      <div style="font-family:var(--mono); color:var(--text-faint); font-size:12px; min-width:20px;">${i+1}.</div>
+      ${tarjetaChoferInfo(s)}
+      <button type="button" class="btn small primary" data-act="arrancar" data-id="${s.id}">▶ Arrancar</button>
+    `;
+    wrap.appendChild(div);
+  });
+
+  document.querySelectorAll('#chofer-en-curso button, #chofer-list button').forEach(b=>{
+    b.addEventListener('click', ()=>{
+      const id = b.dataset.id;
+      if(b.dataset.act==='arrancar') arrancarServicio(id, renderChofer);
+      else if(b.dataset.act==='pausar') pausarServicio(id, renderChofer);
+      else if(b.dataset.act==='finalizar') abrirModalFinalizar(id, renderChofer);
+    });
+  });
+}
+
+wireSegmented('seg-chofer-vista', v=>{
+  document.getElementById('chofer-vista-cola').style.display = v==='cola' ? 'block' : 'none';
+  document.getElementById('chofer-vista-historial').style.display = v==='historial' ? 'block' : 'none';
+  if(v==='historial') renderHistorial(); else renderChofer();
+});
+function renderChoferTab(){
+  const activo = document.querySelector('#seg-chofer-vista button.on');
+  if(activo && activo.dataset.val==='historial') renderHistorial(); else renderChofer();
+}
+
+function inicioDeSemana(){
+  const d = new Date();
+  const dia = (d.getDay()+6)%7; // lunes = 0
+  d.setHours(0,0,0,0);
+  d.setDate(d.getDate()-dia);
+  return d;
+}
+function renderHistorial(){
+  const periodo = document.getElementById('historial-periodo').value;
+  let list = servicios.filter(s=>s.estadoTrabajo==='finalizado');
+  if(periodo==='hoy'){
+    const hoy = new Date(); hoy.setHours(0,0,0,0);
+    list = list.filter(s=> new Date(s.fecha) >= hoy);
+  } else if(periodo==='semana'){
+    const inicio = inicioDeSemana();
+    list = list.filter(s=> new Date(s.fecha) >= inicio);
+  }
+  list = list.slice().sort((a,b)=> new Date(b.fecha) - new Date(a.fecha));
+
+  let totalCorte = 0;
+  const wrap = document.getElementById('historial-list');
+  wrap.innerHTML = '';
+  document.getElementById('historial-empty').style.display = list.length ? 'none' : 'block';
 
   list.forEach(s=>{
-    const vehiculo = [s.marca, s.modelo].filter(Boolean).join(' ');
     const tipoObj = tipoById(s.tipoServicioId);
-    let lineaExtra = '';
-    if(s.esTraslado){
-      const corte = calcCorteChofer(tipoObj, s.valor);
-      if(corte!==null) lineaExtra = ` · Te corresponde: ${fmtMoney(corte)}`;
-    } else if(s.tarifaUsada && config.tarifas[s.tarifaUsada]){
-      lineaExtra = ` · Tarifa: ${escapeHtml(config.tarifas[s.tarifaUsada].nombre)}`;
-    }
+    const corte = calcCorteChofer(tipoObj, s);
+    if(corte!==null) totalCorte += corte;
+    const medioTxt = s.medioPago==='efectivo' ? '💵 Efectivo'
+      : s.medioPago==='transferencia' ? '🏦 Transferencia'
+      : s.medioPago==='no_pago' ? '🚫 No pagó'
+      : (s.pago==='seguro' ? 'Seguro' : '—');
+    const medioClase = s.medioPago==='no_pago' ? 'nopago' : 'neutro';
     const div = document.createElement('div');
     div.className = 'config-item';
     div.innerHTML = `
       <div class="name">
         <span class="ticket">${s.ticket}</span> ${escapeHtml(s.tipoServicioNombre)}
-        <div style="color:var(--text-dim); font-size:12.5px; margin-top:3px;">${escapeHtml(s.cliente)}${vehiculo ? ' · '+escapeHtml(vehiculo) : ''}</div>
-        <div style="font-family:var(--mono); font-size:12.5px; margin-top:3px;">Cobrar: ${fmtMoney(s.valor)}${lineaExtra}</div>
+        <div style="color:var(--text-dim); font-size:12px; margin-top:2px;">${fmtFecha(s.fecha)} · ${escapeHtml(s.cliente)}</div>
+        ${s.comentarioChofer ? `<div style="font-size:12px; color:var(--text-faint); margin-top:3px;">📝 ${escapeHtml(s.comentarioChofer)}</div>` : ''}
       </div>
-      <div style="display:flex; flex-direction:column; gap:6px;">
-        <div class="segmented" style="min-width:220px;">
-          <button type="button" data-act="finalizado-toggle" data-id="${s.id}" class="${s.finalizado?'on':''}">${s.finalizado?'✓ Finalizado':'Marcar finalizado'}</button>
-        </div>
-        <div class="segmented" style="min-width:220px;">
-          <button type="button" data-act="efectivo" data-id="${s.id}" class="${s.medioPago==='efectivo'?'on':''}">💵 Efectivo</button>
-          <button type="button" data-act="transferencia" data-id="${s.id}" class="${s.medioPago==='transferencia'?'on':''}">🏦 Transferencia</button>
-        </div>
+      <div style="text-align:right; min-width:150px;">
+        <span class="badge ${medioClase}">${medioTxt}</span>
+        <div style="font-family:var(--mono); font-size:13px; margin-top:6px;">${corte!==null ? 'Te corresponde: '+fmtMoney(corte) : ''}</div>
+        <button class="btn small" data-act="editar-final" data-id="${s.id}" style="margin-top:6px;">Editar</button>
       </div>
     `;
     wrap.appendChild(div);
   });
 
-  wrap.querySelectorAll('button').forEach(b=>{
-    b.addEventListener('click', ()=>{
-      const s = servicios.find(x=>x.id===b.dataset.id);
-      if(!s) return;
-      aplicarAccionPago(s, b.dataset.act, renderChofer);
-    });
+  document.getElementById('historial-metrics').innerHTML = `
+    <div class="metric orange"><div class="lbl">Servicios finalizados</div><div class="val">${list.length}</div></div>
+    <div class="metric green"><div class="lbl">Total que te corresponde</div><div class="val">${fmtMoney(totalCorte)}</div></div>
+  `;
+
+  wrap.querySelectorAll('button[data-act="editar-final"]').forEach(b=>{
+    b.addEventListener('click', ()=> abrirModalFinalizar(b.dataset.id, renderHistorial));
   });
 }
-document.getElementById('chofer-filtro').addEventListener('change', renderChofer);
-
-async function aplicarAccionPago(s, accion, onDone){
-  if(accion==='finalizado-toggle'){
-    s.finalizado = !s.finalizado;
-  } else {
-    const nuevoMedio = s.medioPago===accion ? '' : accion;
-    s.medioPago = nuevoMedio;
-    s.estadoPago = nuevoMedio ? 'pagado' : 'pendiente';
-  }
-  const ok = await saveAll();
-  if(ok){ toast('Guardado'); onDone(); }
-  else { toast('No se pudo guardar. Probá de nuevo.'); }
-}
+document.getElementById('historial-periodo').addEventListener('change', renderHistorial);
 
 /* ---------- VISTA DE UN SOLO SERVICIO (link para el chofer) ---------- */
 function renderSoloServicio(id){
@@ -1186,12 +1432,9 @@ function renderSoloCard(id){
   const vehiculo = [s.marca, s.modelo].filter(Boolean).join(' ');
   const tipoObj = tipoById(s.tipoServicioId);
   let lineaExtra = '';
-  if(s.esTraslado){
-    const corte = calcCorteChofer(tipoObj, s.valor);
-    if(corte!==null){
-      const pct = tipoObj.comision.tipo==='porcentaje' ? ` (${tipoObj.comision.valor}%)` : '';
-      lineaExtra = `<div>🚚 Se lleva el chofer: <b>${fmtMoney(corte)}</b>${pct}</div>`;
-    }
+  const corte = calcCorteChofer(tipoObj, s);
+  if(corte!==null){
+    lineaExtra = `<div>🚚 Se lleva el chofer: <b>${fmtMoney(corte)}</b></div>`;
   } else if(s.tarifaUsada && config.tarifas[s.tarifaUsada]){
     lineaExtra = `<div>💲 Tarifa: ${escapeHtml(config.tarifas[s.tarifaUsada].nombre)}</div>`;
   }
@@ -1217,40 +1460,42 @@ function renderSoloCard(id){
       <div class="field">
         <label>Estado del servicio</label>
         <div class="segmented" id="solo-seg-estado">
-          <button type="button" data-val="pendiente" class="${!s.finalizado?'on':''}">Pendiente</button>
-          <button type="button" data-val="finalizado" class="${s.finalizado?'on':''}">Finalizado</button>
+          <button type="button" data-val="pendiente" class="${s.estadoTrabajo==='pendiente'?'on':''}">Pendiente</button>
+          <button type="button" data-val="en_curso" class="${s.estadoTrabajo==='en_curso'?'on':''}">En curso</button>
+          <button type="button" data-val="finalizado" class="${s.estadoTrabajo==='finalizado'?'on':''}">Finalizado</button>
         </div>
       </div>
     </div>
-    ${s.pago==='particular' ? `
-    <div class="row">
-      <div class="field">
-        <label>¿Cómo pagó el cliente?</label>
-        <div class="segmented" id="solo-seg-pago">
-          <button type="button" data-val="efectivo" class="${s.medioPago==='efectivo'?'on':''}">💵 Efectivo</button>
-          <button type="button" data-val="transferencia" class="${s.medioPago==='transferencia'?'on':''}">🏦 Transferencia</button>
-        </div>
-      </div>
+    ${s.estadoTrabajo==='finalizado' ? `
+    <div class="hint" style="margin-bottom:8px;">
+      ${s.pago==='particular' ? (s.medioPago==='efectivo' ? '💵 Pagó en efectivo' : s.medioPago==='transferencia' ? '🏦 Pagó por transferencia' : s.medioPago==='no_pago' ? '🚫 No pagó' : 'Sin forma de pago definida') : ''}
+      ${s.comentarioChofer ? `<br>📝 ${escapeHtml(s.comentarioChofer)}` : ''}
+    </div>
+    <div class="actions-row" style="justify-content:flex-start; margin-bottom:8px;">
+      <button class="btn small" id="btn-editar-finalizado">Editar pago / comentario</button>
     </div>` : ''}
     <div class="hint" id="solo-guardado-hint" style="margin-top:8px; min-height:16px;"></div>
   `;
   document.getElementById('solo-seg-estado').querySelectorAll('button').forEach(b=>{
     b.addEventListener('click', async ()=>{
-      s.finalizado = b.dataset.val==='finalizado';
-      const ok = await saveAll();
-      if(ok){ renderSoloCard(id); flashSoloGuardado(); }
+      const val = b.dataset.val;
+      if(val==='en_curso'){
+        await arrancarServicio(id, ()=>{});
+        renderSoloCard(id);
+        flashSoloGuardado();
+      } else if(val==='pendiente'){
+        await pausarServicio(id, ()=>{});
+        renderSoloCard(id);
+        flashSoloGuardado();
+      } else {
+        abrirModalFinalizar(id, ()=>{ renderSoloCard(id); flashSoloGuardado(); });
+      }
     });
   });
-  const pagoSeg = document.getElementById('solo-seg-pago');
-  if(pagoSeg){
-    pagoSeg.querySelectorAll('button').forEach(b=>{
-      b.addEventListener('click', async ()=>{
-        const nuevo = s.medioPago===b.dataset.val ? '' : b.dataset.val;
-        s.medioPago = nuevo;
-        s.estadoPago = nuevo ? 'pagado' : 'pendiente';
-        const ok = await saveAll();
-        if(ok){ renderSoloCard(id); flashSoloGuardado(); }
-      });
+  const btnEditar = document.getElementById('btn-editar-finalizado');
+  if(btnEditar){
+    btnEditar.addEventListener('click', ()=>{
+      abrirModalFinalizar(id, ()=>{ renderSoloCard(id); flashSoloGuardado(); });
     });
   }
 }
@@ -1270,9 +1515,20 @@ function renderConfig(){
   config.serviceTypes.forEach(t=>{
     const div = document.createElement('div');
     div.className = 'config-item';
+    let etiqueta = '';
+    let meta = '';
+    if(t.esTraslado){
+      etiqueta = '<span class="badge seguro">Traslado</span>';
+      if(t.comision) meta = 'Chofer: ' + (t.comision.tipo==='fijo' ? fmtMoney(t.comision.valor) : t.comision.valor+'%');
+    } else if(t.modoComision==='comision'){
+      etiqueta = '<span class="badge neutro">Comisión propia</span>';
+      if(t.comision) meta = 'Chofer: ' + (t.comision.tipo==='fijo' ? fmtMoney(t.comision.valor) : t.comision.valor+'%');
+    } else {
+      etiqueta = '<span class="badge neutro">Usa Tarifa 1/2</span>';
+    }
     div.innerHTML = `
-      <div class="name">${escapeHtml(t.nombre)} ${t.esTraslado ? '<span class="badge seguro">Traslado</span>' : ''}</div>
-      ${t.esTraslado && t.comision ? `<div style="font-family:var(--mono); font-size:12px; color:var(--text-dim);">Chofer: ${t.comision.tipo==='fijo' ? fmtMoney(t.comision.valor) : t.comision.valor+'%'}</div>` : ''}
+      <div class="name">${escapeHtml(t.nombre)} ${etiqueta}</div>
+      ${meta ? `<div style="font-family:var(--mono); font-size:12px; color:var(--text-dim);">${meta}</div>` : ''}
       <button class="btn small" data-act="edit-tipo" data-id="${t.id}">Editar</button>
       <button class="btn small danger" data-act="del-tipo" data-id="${t.id}">Eliminar</button>
     `;
@@ -1308,32 +1564,42 @@ function editTipoPrompt(id){
   const t = tipoById(id);
   const nombre = prompt('Nombre del tipo de servicio:', t.nombre);
   if(nombre===null) return;
-  const esTraslado = confirm('¿Es un traslado? Aceptar = Sí, Cancelar = No');
+  const modoActual = t.esTraslado ? 'traslado' : (t.modoComision || 'tarifa');
+  let modo = prompt('¿Cómo le corresponde al chofer? Escribí: traslado / tarifa / comision', modoActual);
+  if(modo===null) return;
+  modo = modo.trim().toLowerCase();
+  if(!['traslado','tarifa','comision'].includes(modo)) modo = modoActual;
+
   t.nombre = nombre.trim() || t.nombre;
-  t.esTraslado = esTraslado;
-  if(esTraslado){
+  t.esTraslado = (modo==='traslado');
+  if(modo==='traslado' || modo==='comision'){
     const comTipo = confirm('¿Cuánto se lleva el chofer por porcentaje? Aceptar = Porcentaje, Cancelar = Monto fijo') ? 'porcentaje' : 'fijo';
     const comValor = prompt('Valor ('+(comTipo==='porcentaje'?'% del servicio':'monto fijo $')+'):', (t.comision && t.comision.valor) || 60);
     if(comValor===null) return;
     t.comision = { tipo: comTipo, valor: Number(comValor)||0 };
+    t.modoComision = (modo==='comision') ? 'comision' : undefined;
   } else {
     delete t.comision;
+    t.modoComision = 'tarifa';
   }
   saveAll().then(ok=>{ if(ok){ renderConfig(); fillTipoSelect(); toast('Tipo actualizado'); } });
 }
-wireSegmented('new-tipo-traslado', v=>{
-  document.getElementById('grp-new-tipo-comision').style.display = v==='si' ? 'flex' : 'none';
+wireSegmented('new-tipo-modo', v=>{
+  document.getElementById('grp-new-tipo-comision').style.display = (v==='traslado'||v==='comision') ? 'flex' : 'none';
 });
 wireSegmented('new-tipo-comtipo', ()=>{});
 document.getElementById('btn-add-tipo').addEventListener('click', async ()=>{
   const nombre = document.getElementById('new-tipo-nombre').value.trim();
   if(!nombre){ toast('Poné un nombre para el nuevo tipo'); return; }
-  const esTraslado = document.querySelector('#new-tipo-traslado button.on').dataset.val === 'si';
-  const nuevoTipo = { id: 'tipo-' + Date.now(), nombre, esTraslado };
-  if(esTraslado){
+  const modo = document.querySelector('#new-tipo-modo button.on').dataset.val;
+  const nuevoTipo = { id: 'tipo-' + Date.now(), nombre, esTraslado: modo==='traslado' };
+  if(modo==='tarifa'){
+    nuevoTipo.modoComision = 'tarifa';
+  } else {
     const comTipo = document.querySelector('#new-tipo-comtipo button.on').dataset.val;
     const comValor = Number(document.getElementById('new-tipo-comvalor').value) || 0;
     nuevoTipo.comision = { tipo: comTipo, valor: comValor };
+    if(modo==='comision') nuevoTipo.modoComision = 'comision';
   }
   config.serviceTypes.push(nuevoTipo);
   const ok = await saveAll();
