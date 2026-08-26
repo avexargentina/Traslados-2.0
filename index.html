@@ -256,17 +256,17 @@
           </div>
         </div>
 
-        <div class="row" id="grp-traslado" style="display:none;">
+        <div class="row" id="grp-origen">
           <div class="field">
             <label>Origen</label>
-            <input type="text" id="f-origen" placeholder="Dirección de retiro">
+            <input type="text" id="f-origen" placeholder="Dirección donde se hace el servicio">
           </div>
-          <div class="field">
+          <div class="field" id="grp-destino" style="display:none;">
             <label>Destino</label>
             <input type="text" id="f-destino" placeholder="Dirección de entrega">
           </div>
         </div>
-        <div class="row" id="grp-links" style="display:none;">
+        <div class="row" id="grp-links">
           <div class="field">
             <label>Link de Maps — origen (opcional, pegalo vos)</label>
             <div style="display:flex; gap:6px;">
@@ -274,7 +274,7 @@
               <button type="button" class="btn small" id="btn-abrir-origen">Abrir</button>
             </div>
           </div>
-          <div class="field">
+          <div class="field" id="grp-link-destino" style="display:none;">
             <label>Link de Maps — destino (opcional, pegalo vos)</label>
             <div style="display:flex; gap:6px;">
               <input type="text" id="f-link-destino" placeholder="https://maps.app.goo.gl/...">
@@ -373,9 +373,10 @@
     <div class="view" id="view-chofer">
       <div class="card">
         <h2>Vista del chofer</h2>
-        <div class="segmented" id="seg-chofer-vista" style="max-width:320px; margin-bottom:14px;">
+        <div class="segmented" id="seg-chofer-vista" style="max-width:420px; margin-bottom:14px;">
           <button type="button" data-val="cola" class="on">Cola de trabajo</button>
           <button type="button" data-val="historial">Historial</button>
+          <button type="button" data-val="liquidaciones">Liquidaciones</button>
         </div>
 
         <div id="chofer-vista-cola">
@@ -397,7 +398,41 @@
           <div id="historial-list"></div>
           <div class="empty" id="historial-empty" style="display:none;">Todavía no finalizaste ningún servicio.</div>
         </div>
+
+        <div id="chofer-vista-liquidaciones" style="display:none;">
+          <div class="metrics" id="liquidacion-metrics"></div>
+
+          <div class="card" style="background:var(--panel2); margin-bottom:16px;">
+            <h2>Nueva liquidación</h2>
+            <div class="row">
+              <div class="field">
+                <label>Fecha</label>
+                <input type="date" id="liq-fecha">
+              </div>
+              <div class="field">
+                <label>Efectivo que rindió el chofer</label>
+                <input type="number" id="liq-monto" placeholder="0" min="0">
+              </div>
+            </div>
+            <label style="margin-top:4px;">Gastos del chofer (adelantos, combustible, etc.)</label>
+            <div id="liq-gastos-list"></div>
+            <div class="actions-row" style="justify-content:flex-start; margin-top:4px;">
+              <button class="btn small" id="btn-liq-add-gasto">+ Agregar gasto</button>
+            </div>
+            <div class="row" style="margin-top:10px;">
+              <div class="field">
+                <label>Comentario (opcional)</label>
+                <textarea id="liq-comentario" rows="2" placeholder="Cualquier detalle sobre esta liquidación"></textarea>
+              </div>
+            </div>
+            <div class="actions-row"><button class="btn primary" id="btn-guardar-liquidacion">Guardar liquidación</button></div>
+          </div>
+
+          <div id="liquidaciones-list"></div>
+          <div class="empty" id="liquidaciones-empty" style="display:none;">Todavía no cargaste ninguna liquidación.</div>
+        </div>
       </div>
+
     </div>
 
     <!-- CONFIG -->
@@ -564,6 +599,7 @@ const DEFAULT_CONFIG = {
 
 let config = null;
 let servicios = [];
+let liquidaciones = [];
 let seg = { pago:'particular', estadopago:'pendiente', tarifa:'tarifa1' };
 let editingId = null;
 
@@ -669,13 +705,16 @@ async function loadState(){
       const parsed = JSON.parse(r.value);
       config = parsed.config || deepClone(DEFAULT_CONFIG);
       servicios = parsed.servicios || [];
+      liquidaciones = parsed.liquidaciones || [];
     }catch(e){
       config = deepClone(DEFAULT_CONFIG);
       servicios = [];
+      liquidaciones = [];
     }
   } else {
     config = deepClone(DEFAULT_CONFIG);
     servicios = [];
+    liquidaciones = [];
   }
   if(config.alertarFaltantes === undefined) config.alertarFaltantes = true;
   if(!config.tarifas) config.tarifas = deepClone(DEFAULT_CONFIG.tarifas);
@@ -686,15 +725,23 @@ async function loadState(){
       if(t.modoComision==='comision' && !t.comision) t.comision = { tipo:'fijo', valor:1500 };
     }
   });
+  let necesitaGuardar = false;
   servicios.forEach(s=>{
     if(!s.estadoTrabajo) s.estadoTrabajo = s.finalizado ? 'finalizado' : 'pendiente';
     if(s.ordenChofer===undefined || s.ordenChofer===null) s.ordenChofer = config.nextOrden++;
+    // Backfill: si ya está finalizado pero nunca se congeló el corte (servicios de antes
+    // de esta función), lo calculamos una vez con la config actual y lo dejamos fijo.
+    if(s.estadoTrabajo==='finalizado' && (s.corteChofer===undefined || s.corteChofer===null)){
+      s.corteChofer = calcCorteChofer(tipoById(s.tipoServicioId), s);
+      necesitaGuardar = true;
+    }
   });
   updateStorageBanner();
+  if(necesitaGuardar) saveAll();
 }
 
 async function saveAll(){
-  const payload = JSON.stringify({config, servicios});
+  const payload = JSON.stringify({config, servicios, liquidaciones});
   const ok = await storageSetRaw(STORAGE_KEY, payload);
   updateStorageBanner();
   if(!ok){
@@ -753,6 +800,14 @@ function calcCorteChofer(tipo, s){
   }
   return null;
 }
+// Si el servicio ya está finalizado, usa el corte "congelado" al momento de finalizarlo
+// (no se recalcula si después cambian las tarifas o comisiones en Configuración).
+function corteChoferDeRegistro(s){
+  if(s.estadoTrabajo==='finalizado' && s.corteChofer!==undefined && s.corteChofer!==null){
+    return s.corteChofer;
+  }
+  return calcCorteChofer(tipoById(s.tipoServicioId), s);
+}
 
 /* ---------- ESTADO DE TRABAJO (pendiente / en_curso / finalizado) ---------- */
 let modalFinalizarId = null;
@@ -788,7 +843,13 @@ document.getElementById('modal-finalizar-confirmar').addEventListener('click', a
     s.estadoPago = (s.medioPago==='efectivo' || s.medioPago==='transferencia') ? 'pagado' : 'pendiente';
   }
   s.comentarioChofer = document.getElementById('modal-finalizar-comentario').value.trim();
+  const yaEstabaFinalizado = s.estadoTrabajo==='finalizado';
   s.estadoTrabajo = 'finalizado';
+  // El corte del chofer se congela la primera vez que se finaliza; si ya estaba
+  // finalizado (por ejemplo, se está editando el pago/comentario), no se recalcula.
+  if(!yaEstabaFinalizado || s.corteChofer===undefined || s.corteChofer===null){
+    s.corteChofer = calcCorteChofer(tipoById(s.tipoServicioId), s);
+  }
   const ok = await saveAll();
   document.getElementById('modal-finalizar-overlay').classList.remove('show');
   if(ok){
@@ -915,8 +976,8 @@ function fillTipoSelect(){
 function onTipoChange(){
   const t = tipoById(document.getElementById('f-tipo').value);
   const esTraslado = t && t.esTraslado;
-  document.getElementById('grp-traslado').style.display = esTraslado ? 'flex' : 'none';
-  document.getElementById('grp-links').style.display = esTraslado ? 'flex' : 'none';
+  document.getElementById('grp-destino').style.display = esTraslado ? 'block' : 'none';
+  document.getElementById('grp-link-destino').style.display = esTraslado ? 'block' : 'none';
   document.getElementById('grp-tarifa').style.display = (t && !esTraslado && t.modoComision==='tarifa') ? 'flex' : 'none';
   const hintComision = document.getElementById('hint-comision-propia');
   if(t && !esTraslado && t.modoComision==='comision' && t.comision){
@@ -1006,9 +1067,9 @@ async function onGuardar(){
     tipoServicioId: tipo.id,
     tipoServicioNombre: tipo.nombre,
     esTraslado: tipo.esTraslado,
-    origen: tipo.esTraslado ? document.getElementById('f-origen').value.trim() : '',
+    origen: document.getElementById('f-origen').value.trim(),
     destino: tipo.esTraslado ? document.getElementById('f-destino').value.trim() : '',
-    linkOrigen: tipo.esTraslado ? document.getElementById('f-link-origen').value.trim() : '',
+    linkOrigen: document.getElementById('f-link-origen').value.trim(),
     linkDestino: tipo.esTraslado ? document.getElementById('f-link-destino').value.trim() : '',
     tarifaUsada: !tipo.esTraslado ? seg.tarifa : null,
     pago: seg.pago,
@@ -1132,20 +1193,15 @@ function renderRegistro(){
     const estadoTrabajoClase = s.estadoTrabajo==='finalizado' ? 'finalizado' : (s.estadoTrabajo==='en_curso' ? 'pendiente' : 'neutro');
     const estadoTrabajoTexto = s.estadoTrabajo==='finalizado' ? 'Finalizado' : (s.estadoTrabajo==='en_curso' ? 'En curso' : 'Pendiente');
     const estadoTrabajoBadge = `<div style="margin-top:3px;"><span class="badge ${estadoTrabajoClase}">${estadoTrabajoTexto}</span></div>`;
-    const puedeReordenar = s.estadoTrabajo!=='finalizado';
     tr.innerHTML = `
       <td><span class="ticket">${s.ticket}</span></td>
       <td>${fmtFecha(s.fecha)}</td>
       <td>${escapeHtml(s.cliente)}<div style="font-size:11px;color:var(--text-faint)">${escapeHtml(s.telefono)}</div></td>
-      <td>${escapeHtml(s.tipoServicioNombre)}${s.esTraslado ? '<div style="font-size:11px;color:var(--text-faint)">'+escapeHtml(s.origen)+' → '+escapeHtml(s.destino)+'</div>' : ''}</td>
+      <td>${escapeHtml(s.tipoServicioNombre)}${s.esTraslado ? '<div style="font-size:11px;color:var(--text-faint)">'+escapeHtml(s.origen)+' → '+escapeHtml(s.destino)+'</div>' : (s.origen ? '<div style="font-size:11px;color:var(--text-faint)">📍 '+escapeHtml(s.origen)+'</div>' : '')}</td>
       <td>${escapeHtml(vehiculo)||'—'}</td>
       <td>${pagoBadge}${medioPagoBadge}${estadoTrabajoBadge}</td>
       <td>${fmtMoney(s.valor)}</td>
       <td>
-        ${puedeReordenar ? `<div style="display:flex; gap:2px; margin-bottom:4px;">
-          <button class="btn small" data-act="subir" data-id="${s.id}" title="Subir en la cola">↑</button>
-          <button class="btn small" data-act="bajar" data-id="${s.id}" title="Bajar en la cola">↓</button>
-        </div>` : ''}
         <button class="btn small" data-act="link" data-id="${s.id}">Link</button>
         <button class="btn small" data-act="copiar" data-id="${s.id}">Copiar</button>
         <button class="btn small" data-act="editar" data-id="${s.id}">Editar</button>
@@ -1162,8 +1218,6 @@ function renderRegistro(){
       if(b.dataset.act==='editar') editarServicio(id);
       if(b.dataset.act==='borrar') borrarServicio(id);
       if(b.dataset.act==='link') copiarLinkServicio(id);
-      if(b.dataset.act==='subir') moverEnCola(id, -1);
-      if(b.dataset.act==='bajar') moverEnCola(id, 1);
     });
   });
 
@@ -1200,9 +1254,9 @@ function buildResumenTexto(s){
   lineas.push(`🛠️ Servicio: ${s.tipoServicioNombre}`);
   lineas.push(`👤 Cliente: ${s.cliente}`);
   lineas.push(`📞 Teléfono: ${s.telefono}`);
+  if(s.origen) lineas.push(`📍 Origen: ${s.origen}`);
+  if(s.linkOrigen) lineas.push(`🔗 Link origen: ${s.linkOrigen}`);
   if(s.esTraslado){
-    lineas.push(`📍 Origen: ${s.origen}`);
-    if(s.linkOrigen) lineas.push(`🔗 Link origen: ${s.linkOrigen}`);
     lineas.push(`📍 Destino: ${s.destino}`);
     if(s.linkDestino) lineas.push(`🔗 Link destino: ${s.linkDestino}`);
   } else if(s.tarifaUsada && config.tarifas[s.tarifaUsada]){
@@ -1251,7 +1305,7 @@ function editarServicio(id){
   updatePreviewTicket();
 }
 function colaOrdenada(){
-  return servicios.filter(s=>s.estadoTrabajo!=='finalizado').sort((a,b)=>a.ordenChofer-b.ordenChofer);
+  return servicios.filter(s=>s.estadoTrabajo==='pendiente').sort((a,b)=>a.ordenChofer-b.ordenChofer);
 }
 async function moverEnCola(id, direccion){
   const cola = colaOrdenada();
@@ -1263,8 +1317,7 @@ async function moverEnCola(id, direccion){
   const tmp = a.ordenChofer;
   a.ordenChofer = b.ordenChofer;
   b.ordenChofer = tmp;
-  const ok = await saveAll();
-  if(ok) renderRegistro();
+  await saveAll();
 }
 async function borrarServicio(id){
   if(!confirm('¿Borrar este servicio del registro? Esta acción no se puede deshacer.')) return;
@@ -1280,25 +1333,30 @@ function tarjetaChoferInfo(s){
   const vehiculo = [s.marca, s.modelo].filter(Boolean).join(' ');
   const tipoObj = tipoById(s.tipoServicioId);
   let lineaExtra = '';
-  const corte = calcCorteChofer(tipoObj, s);
+  const corte = corteChoferDeRegistro(s);
   if(corte!==null){
     lineaExtra = ` · Te corresponde: ${fmtMoney(corte)}`;
   } else if(s.tarifaUsada && config.tarifas[s.tarifaUsada]){
     lineaExtra = ` · Tarifa: ${escapeHtml(config.tarifas[s.tarifaUsada].nombre)}`;
   }
-  const destino = s.esTraslado ? `<div style="font-size:12px; color:var(--text-dim); margin-top:2px;">📍 ${escapeHtml(s.origen)} → ${escapeHtml(s.destino)}</div>` : '';
+  let ubicacion = '';
+  if(s.esTraslado && s.origen){
+    ubicacion = `<div style="font-size:12px; color:var(--text-dim); margin-top:2px;">📍 ${escapeHtml(s.origen)} → ${escapeHtml(s.destino)}</div>`;
+  } else if(s.origen){
+    ubicacion = `<div style="font-size:12px; color:var(--text-dim); margin-top:2px;">📍 ${escapeHtml(s.origen)}</div>`;
+  }
   return `
     <div class="name">
       <span class="ticket">${s.ticket}</span> ${escapeHtml(s.tipoServicioNombre)}
       <div style="color:var(--text-dim); font-size:12.5px; margin-top:3px;">${escapeHtml(s.cliente)}${vehiculo ? ' · '+escapeHtml(vehiculo) : ''}</div>
-      ${destino}
+      ${ubicacion}
       <div style="font-family:var(--mono); font-size:12.5px; margin-top:3px;">Cobrar: ${fmtMoney(s.valor)}${lineaExtra}</div>
     </div>`;
 }
 
 function renderChofer(){
   const enCurso = servicios.find(s=>s.estadoTrabajo==='en_curso');
-  const cola = colaOrdenada().filter(s=> !enCurso || s.id!==enCurso.id);
+  const cola = colaOrdenada();
 
   const resumen = document.getElementById('chofer-resumen');
   resumen.textContent = `Tenés ${cola.length + (enCurso?1:0)} pendiente(s)` + (enCurso ? ` · Ahora: ${enCurso.tipoServicioNombre}` : '');
@@ -1328,7 +1386,11 @@ function renderChofer(){
     const div = document.createElement('div');
     div.className = 'config-item';
     div.innerHTML = `
-      <div style="font-family:var(--mono); color:var(--text-faint); font-size:12px; min-width:20px;">${i+1}.</div>
+      <div style="display:flex; flex-direction:column; gap:2px; min-width:20px;">
+        <button class="btn small" data-act="subir" data-id="${s.id}" title="Subir prioridad" ${i===0?'disabled':''}>↑</button>
+        <button class="btn small" data-act="bajar" data-id="${s.id}" title="Bajar prioridad" ${i===cola.length-1?'disabled':''}>↓</button>
+      </div>
+      <div style="font-family:var(--mono); color:var(--text-faint); font-size:12px; min-width:16px;">${i+1}.</div>
       ${tarjetaChoferInfo(s)}
       <button type="button" class="btn small primary" data-act="arrancar" data-id="${s.id}">▶ Arrancar</button>
     `;
@@ -1341,6 +1403,8 @@ function renderChofer(){
       if(b.dataset.act==='arrancar') arrancarServicio(id, renderChofer);
       else if(b.dataset.act==='pausar') pausarServicio(id, renderChofer);
       else if(b.dataset.act==='finalizar') abrirModalFinalizar(id, renderChofer);
+      else if(b.dataset.act==='subir') moverEnCola(id, -1).then(renderChofer);
+      else if(b.dataset.act==='bajar') moverEnCola(id, 1).then(renderChofer);
     });
   });
 }
@@ -1348,11 +1412,17 @@ function renderChofer(){
 wireSegmented('seg-chofer-vista', v=>{
   document.getElementById('chofer-vista-cola').style.display = v==='cola' ? 'block' : 'none';
   document.getElementById('chofer-vista-historial').style.display = v==='historial' ? 'block' : 'none';
-  if(v==='historial') renderHistorial(); else renderChofer();
+  document.getElementById('chofer-vista-liquidaciones').style.display = v==='liquidaciones' ? 'block' : 'none';
+  if(v==='historial') renderHistorial();
+  else if(v==='liquidaciones') renderLiquidaciones();
+  else renderChofer();
 });
 function renderChoferTab(){
   const activo = document.querySelector('#seg-chofer-vista button.on');
-  if(activo && activo.dataset.val==='historial') renderHistorial(); else renderChofer();
+  const val = activo ? activo.dataset.val : 'cola';
+  if(val==='historial') renderHistorial();
+  else if(val==='liquidaciones') renderLiquidaciones();
+  else renderChofer();
 }
 
 function inicioDeSemana(){
@@ -1381,19 +1451,29 @@ function renderHistorial(){
 
   list.forEach(s=>{
     const tipoObj = tipoById(s.tipoServicioId);
-    const corte = calcCorteChofer(tipoObj, s);
+    const corte = corteChoferDeRegistro(s);
     if(corte!==null) totalCorte += corte;
     const medioTxt = s.medioPago==='efectivo' ? '💵 Efectivo'
       : s.medioPago==='transferencia' ? '🏦 Transferencia'
       : s.medioPago==='no_pago' ? '🚫 No pagó'
       : (s.pago==='seguro' ? 'Seguro' : '—');
     const medioClase = s.medioPago==='no_pago' ? 'nopago' : 'neutro';
+    const vehiculo = [s.marca, s.modelo].filter(Boolean).join(' ') + (s.patente ? ' · '+s.patente : '');
+    let ubicacion = '';
+    if(s.esTraslado && s.origen){
+      ubicacion = `<div style="font-size:12px; color:var(--text-dim); margin-top:2px;">📍 ${escapeHtml(s.origen)} → ${escapeHtml(s.destino)}</div>`;
+    } else if(s.origen){
+      ubicacion = `<div style="font-size:12px; color:var(--text-dim); margin-top:2px;">📍 ${escapeHtml(s.origen)}</div>`;
+    }
     const div = document.createElement('div');
     div.className = 'config-item';
     div.innerHTML = `
       <div class="name">
         <span class="ticket">${s.ticket}</span> ${escapeHtml(s.tipoServicioNombre)}
         <div style="color:var(--text-dim); font-size:12px; margin-top:2px;">${fmtFecha(s.fecha)} · ${escapeHtml(s.cliente)}</div>
+        ${vehiculo ? `<div style="font-size:12px; color:var(--text-dim); margin-top:2px;">🚗 ${escapeHtml(vehiculo)}</div>` : ''}
+        ${ubicacion}
+        <div style="font-family:var(--mono); font-size:12px; color:var(--text-faint); margin-top:2px;">Valor: ${fmtMoney(s.valor)}</div>
         ${s.comentarioChofer ? `<div style="font-size:12px; color:var(--text-faint); margin-top:3px;">📝 ${escapeHtml(s.comentarioChofer)}</div>` : ''}
       </div>
       <div style="text-align:right; min-width:150px;">
@@ -1416,6 +1496,125 @@ function renderHistorial(){
 }
 document.getElementById('historial-periodo').addEventListener('change', renderHistorial);
 
+/* ---------- LIQUIDACIONES ---------- */
+let gastosFormTemp = [];
+
+function renderGastosForm(){
+  const wrap = document.getElementById('liq-gastos-list');
+  wrap.innerHTML = '';
+  gastosFormTemp.forEach((g, i)=>{
+    const row = document.createElement('div');
+    row.className = 'row';
+    row.style.marginBottom = '6px';
+    row.innerHTML = `
+      <div class="field"><input type="text" data-idx="${i}" data-campo="concepto" placeholder="Concepto (ej: nafta)" value="${escapeHtml(g.concepto)}"></div>
+      <div class="field" style="max-width:140px;"><input type="number" data-idx="${i}" data-campo="monto" placeholder="0" min="0" value="${g.monto||''}"></div>
+      <button type="button" class="btn small danger" data-idx="${i}" data-act="quitar-gasto">Quitar</button>
+    `;
+    wrap.appendChild(row);
+  });
+  wrap.querySelectorAll('input').forEach(inp=>{
+    inp.addEventListener('input', ()=>{
+      const idx = Number(inp.dataset.idx);
+      gastosFormTemp[idx][inp.dataset.campo] = inp.dataset.campo==='monto' ? Number(inp.value)||0 : inp.value;
+    });
+  });
+  wrap.querySelectorAll('button[data-act="quitar-gasto"]').forEach(b=>{
+    b.addEventListener('click', ()=>{
+      gastosFormTemp.splice(Number(b.dataset.idx), 1);
+      renderGastosForm();
+    });
+  });
+}
+document.getElementById('btn-liq-add-gasto').addEventListener('click', ()=>{
+  gastosFormTemp.push({ concepto:'', monto:0 });
+  renderGastosForm();
+});
+
+function resetLiquidacionForm(){
+  document.getElementById('liq-fecha').value = new Date().toISOString().slice(0,10);
+  document.getElementById('liq-monto').value = '';
+  document.getElementById('liq-comentario').value = '';
+  gastosFormTemp = [];
+  renderGastosForm();
+}
+
+document.getElementById('btn-guardar-liquidacion').addEventListener('click', async ()=>{
+  const fecha = document.getElementById('liq-fecha').value || new Date().toISOString().slice(0,10);
+  const monto = Number(document.getElementById('liq-monto').value) || 0;
+  const comentario = document.getElementById('liq-comentario').value.trim();
+  const gastos = gastosFormTemp.filter(g=> g.concepto.trim() || g.monto).map(g=>({ concepto: g.concepto.trim(), monto: Number(g.monto)||0 }));
+
+  const nueva = {
+    id: Date.now()+'-'+Math.random().toString(36).slice(2,7),
+    fecha,
+    montoRendido: monto,
+    gastos,
+    comentario
+  };
+  liquidaciones.unshift(nueva);
+  const ok = await saveAll();
+  if(ok){
+    toast('Liquidación guardada');
+    resetLiquidacionForm();
+    renderLiquidaciones();
+  } else {
+    liquidaciones.shift();
+  }
+});
+
+async function borrarLiquidacion(id){
+  if(!confirm('¿Borrar esta liquidación?')) return;
+  const prev = liquidaciones;
+  liquidaciones = liquidaciones.filter(l=>l.id!==id);
+  const ok = await saveAll();
+  if(ok){ renderLiquidaciones(); toast('Liquidación eliminada'); }
+  else { liquidaciones = prev; }
+}
+
+function renderLiquidaciones(){
+  if(!document.getElementById('liq-fecha').value) resetLiquidacionForm();
+
+  const comisionTotal = servicios.filter(s=>s.estadoTrabajo==='finalizado').reduce((a,s)=> a + (corteChoferDeRegistro(s)||0), 0);
+  const efectivoCobrado = servicios.filter(s=> s.estadoTrabajo==='finalizado' && s.pago==='particular' && s.medioPago==='efectivo').reduce((a,s)=> a + (s.valor||0), 0);
+  const efectivoRendido = liquidaciones.reduce((a,l)=> a + (l.montoRendido||0), 0);
+  const gastosTotales = liquidaciones.reduce((a,l)=> a + (l.gastos||[]).reduce((x,g)=>x+(g.monto||0),0), 0);
+  const efectivoPendiente = efectivoCobrado - efectivoRendido;
+
+  document.getElementById('liquidacion-metrics').innerHTML = `
+    <div class="metric orange"><div class="lbl">Comisión acumulada (total)</div><div class="val">${fmtMoney(comisionTotal)}</div></div>
+    <div class="metric"><div class="lbl">Efectivo cobrado (total)</div><div class="val">${fmtMoney(efectivoCobrado)}</div></div>
+    <div class="metric green"><div class="lbl">Efectivo ya rendido</div><div class="val">${fmtMoney(efectivoRendido)}</div></div>
+    <div class="metric yellow"><div class="lbl">Efectivo pendiente de rendir</div><div class="val">${fmtMoney(efectivoPendiente)}</div></div>
+    <div class="metric"><div class="lbl">Gastos registrados (total)</div><div class="val">${fmtMoney(gastosTotales)}</div></div>
+  `;
+
+  const wrap = document.getElementById('liquidaciones-list');
+  wrap.innerHTML = '';
+  const lista = liquidaciones.slice().sort((a,b)=> new Date(b.fecha) - new Date(a.fecha));
+  document.getElementById('liquidaciones-empty').style.display = lista.length ? 'none' : 'block';
+
+  lista.forEach(l=>{
+    const totalGastos = (l.gastos||[]).reduce((a,g)=>a+(g.monto||0),0);
+    const gastosTxt = (l.gastos||[]).map(g=> `${escapeHtml(g.concepto||'Gasto')}: ${fmtMoney(g.monto)}`).join(' · ');
+    const div = document.createElement('div');
+    div.className = 'config-item';
+    div.innerHTML = `
+      <div class="name">
+        <div style="font-family:var(--mono); font-size:13px;">${new Date(l.fecha+'T00:00:00').toLocaleDateString('es-AR')}</div>
+        <div style="font-family:var(--mono); font-size:14px; margin-top:2px;">Rindió: ${fmtMoney(l.montoRendido)}</div>
+        ${gastosTxt ? `<div style="font-size:12px; color:var(--text-dim); margin-top:3px;">Gastos: ${gastosTxt} (total ${fmtMoney(totalGastos)})</div>` : ''}
+        ${l.comentario ? `<div style="font-size:12px; color:var(--text-faint); margin-top:3px;">📝 ${escapeHtml(l.comentario)}</div>` : ''}
+      </div>
+      <button class="btn small danger" data-id="${l.id}">Borrar</button>
+    `;
+    wrap.appendChild(div);
+  });
+  wrap.querySelectorAll('button').forEach(b=>{
+    b.addEventListener('click', ()=> borrarLiquidacion(b.dataset.id));
+  });
+}
+
 /* ---------- VISTA DE UN SOLO SERVICIO (link para el chofer) ---------- */
 function renderSoloServicio(id){
   document.getElementById('app-root').style.display='none';
@@ -1432,7 +1631,7 @@ function renderSoloCard(id){
   const vehiculo = [s.marca, s.modelo].filter(Boolean).join(' ');
   const tipoObj = tipoById(s.tipoServicioId);
   let lineaExtra = '';
-  const corte = calcCorteChofer(tipoObj, s);
+  const corte = corteChoferDeRegistro(s);
   if(corte!==null){
     lineaExtra = `<div>🚚 Se lleva el chofer: <b>${fmtMoney(corte)}</b></div>`;
   } else if(s.tarifaUsada && config.tarifas[s.tarifaUsada]){
@@ -1445,9 +1644,9 @@ function renderSoloCard(id){
       <div>📞 ${escapeHtml(s.telefono)}</div>
       ${vehiculo ? `<div>🚗 ${escapeHtml(vehiculo)}</div>` : ''}
       ${s.patente ? `<div>🔢 Patente: ${escapeHtml(s.patente)}</div>` : ''}
+      ${s.origen ? `<div>📍 Origen: ${escapeHtml(s.origen)}</div>` : ''}
+      ${s.linkOrigen ? `<div>🔗 <a href="${escapeHtml(s.linkOrigen)}" target="_blank" style="color:var(--orange);">Ver origen en Maps</a></div>` : ''}
       ${s.esTraslado ? `
-        <div>📍 Origen: ${escapeHtml(s.origen)}</div>
-        ${s.linkOrigen ? `<div>🔗 <a href="${escapeHtml(s.linkOrigen)}" target="_blank" style="color:var(--orange);">Ver origen en Maps</a></div>` : ''}
         <div>📍 Destino: ${escapeHtml(s.destino)}</div>
         ${s.linkDestino ? `<div>🔗 <a href="${escapeHtml(s.linkDestino)}" target="_blank" style="color:var(--orange);">Ver destino en Maps</a></div>` : ''}
       ` : ''}
