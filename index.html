@@ -367,6 +367,14 @@
           </div>
         </div>
 
+        <div class="row" id="grp-valor-traslado-seguro" style="display:none;">
+          <div class="field">
+            <label>Valor del traslado (lo paga el seguro)</label>
+            <input type="number" id="f-valor-traslado" placeholder="0" min="0" step="1">
+            <div class="hint">Al cliente no se le cobra nada, pero esto es lo que la aseguradora paga por el traslado. Se usa para calcular el % del chofer.</div>
+          </div>
+        </div>
+
         <div class="row">
           <div class="field">
             <label>Notas (opcional)</label>
@@ -932,17 +940,21 @@ function ticketFmt(n){ return 'OT-' + String(n).padStart(4,'0'); }
 function tipoById(id){ return config.serviceTypes.find(t=>t.id===id); }
 function calcCorteChofer(tipo, s){
   if(!tipo) return null;
-  const valor = s.valor;
   if(tipo.esTraslado){
     if(!tipo.comision) return null;
-    return tipo.comision.tipo==='fijo' ? (Number(tipo.comision.valor)||0) : Math.round((Number(valor)||0) * (Number(tipo.comision.valor)||0) / 100);
+    // Si es traslado por seguro, la base del % es lo que paga la aseguradora
+    // (el cliente no paga nada), no el valor cobrado al cliente.
+    const base = (s.pago==='seguro' && s.valorTraslado!==undefined && s.valorTraslado!==null)
+      ? s.valorTraslado
+      : s.valor;
+    return tipo.comision.tipo==='fijo' ? (Number(tipo.comision.valor)||0) : Math.round((Number(base)||0) * (Number(tipo.comision.valor)||0) / 100);
   }
   if(tipo.modoComision==='tarifa'){
     const tarifa = s.tarifaUsada && config.tarifas[s.tarifaUsada];
     return tarifa ? (Number(tarifa.valor)||0) : null;
   }
   if(tipo.modoComision==='comision' && tipo.comision){
-    return tipo.comision.tipo==='fijo' ? (Number(tipo.comision.valor)||0) : Math.round((Number(valor)||0) * (Number(tipo.comision.valor)||0) / 100);
+    return tipo.comision.tipo==='fijo' ? (Number(tipo.comision.valor)||0) : Math.round((Number(s.valor)||0) * (Number(tipo.comision.valor)||0) / 100);
   }
   return null;
 }
@@ -1105,6 +1117,12 @@ function onPagoChange(){
   } else {
     estadoGrp.style.display='block';
   }
+  actualizarVisibilidadValorTraslado();
+}
+function actualizarVisibilidadValorTraslado(){
+  const t = tipoById(document.getElementById('f-tipo').value);
+  const mostrar = t && t.esTraslado && seg.pago==='seguro';
+  document.getElementById('grp-valor-traslado-seguro').style.display = mostrar ? 'flex' : 'none';
 }
 
 /* ---------- FORM: tipo de servicio ---------- */
@@ -1132,6 +1150,7 @@ function onTipoChange(){
   } else {
     hintComision.style.display = 'none';
   }
+  actualizarVisibilidadValorTraslado();
 }
 document.getElementById('btn-abrir-origen').addEventListener('click', ()=>{
   const url = document.getElementById('f-link-origen').value.trim();
@@ -1166,6 +1185,7 @@ function resetForm(){
   document.getElementById('f-link-destino').value='';
   document.getElementById('f-valor').value='';
   document.getElementById('f-valor').dataset.touched='';
+  document.getElementById('f-valor-traslado').value='';
   document.getElementById('f-notas').value='';
   document.getElementById('form-error').style.display='none';
   document.getElementById('btn-guardar').textContent = 'Guardar servicio';
@@ -1196,6 +1216,7 @@ async function onGuardar(){
     if(!document.getElementById('f-destino').value.trim()) faltantes.push('Destino');
   }
   if(document.getElementById('f-valor').value.trim()==='') faltantes.push('Valor');
+  if(tipo.esTraslado && seg.pago==='seguro' && document.getElementById('f-valor-traslado').value.trim()==='') faltantes.push('Valor del traslado');
 
   if(faltantes.length && config.alertarFaltantes !== false){
     const continuar = await mostrarModalFaltantes(faltantes);
@@ -1221,6 +1242,7 @@ async function onGuardar(){
     pago: seg.pago,
     estadoPago: editingId ? servicios.find(s=>s.id===editingId).estadoPago : 'pendiente',
     valor: Number(document.getElementById('f-valor').value)||0,
+    valorTraslado: (tipo.esTraslado && seg.pago==='seguro') ? (Number(document.getElementById('f-valor-traslado').value)||0) : null,
     medioPago: editingId ? (servicios.find(s=>s.id===editingId).medioPago || '') : '',
     estadoTrabajo: editingId ? servicios.find(s=>s.id===editingId).estadoTrabajo : 'pendiente',
     ordenChofer: editingId ? servicios.find(s=>s.id===editingId).ordenChofer : config.nextOrden,
@@ -1346,7 +1368,7 @@ function renderRegistro(){
       <td>${escapeHtml(s.tipoServicioNombre)}${s.esTraslado ? '<div style="font-size:11px;color:var(--text-faint)">'+escapeHtml(s.origen)+' → '+escapeHtml(s.destino)+'</div>' : (s.origen ? '<div style="font-size:11px;color:var(--text-faint)">📍 '+escapeHtml(s.origen)+'</div>' : '')}</td>
       <td>${escapeHtml(vehiculo)||'—'}</td>
       <td>${pagoBadge}${medioPagoBadge}${estadoTrabajoBadge}</td>
-      <td>${fmtMoney(s.valor)}</td>
+      <td>${fmtMoney(s.valor)}${(s.esTraslado && s.pago==='seguro' && s.valorTraslado) ? '<div style="font-size:11px;color:var(--text-faint)">Seguro: '+fmtMoney(s.valorTraslado)+'</div>' : ''}</td>
       <td>
         <button class="btn small" data-act="link" data-id="${s.id}">Link</button>
         <button class="btn small" data-act="copiar" data-id="${s.id}">Copiar</button>
@@ -1446,6 +1468,7 @@ function editarServicio(id){
   if(s.pago==='particular'){ seg.estadopago = s.estadoPago; setSegOn('seg-estadopago', s.estadoPago); }
   const valorInput = document.getElementById('f-valor');
   valorInput.value = s.valor; valorInput.dataset.touched='1';
+  document.getElementById('f-valor-traslado').value = (s.valorTraslado!==null && s.valorTraslado!==undefined) ? s.valorTraslado : '';
   document.getElementById('f-notas').value = s.notas;
   document.getElementById('btn-guardar').textContent = 'Guardar cambios';
   updatePreviewTicket();
@@ -1619,7 +1642,7 @@ function renderHistorial(){
         <div style="color:var(--text-dim); font-size:12px; margin-top:2px;">${fmtFecha(s.fecha)} · ${escapeHtml(s.cliente)}</div>
         ${vehiculo ? `<div style="font-size:12px; color:var(--text-dim); margin-top:2px;">🚗 ${escapeHtml(vehiculo)}</div>` : ''}
         ${ubicacion}
-        <div style="font-family:var(--mono); font-size:12px; color:var(--text-faint); margin-top:2px;">Valor: ${fmtMoney(s.valor)}</div>
+        <div style="font-family:var(--mono); font-size:12px; color:var(--text-faint); margin-top:2px;">Valor: ${fmtMoney(s.valor)}${(s.esTraslado && s.pago==='seguro' && s.valorTraslado) ? ' · Seguro: '+fmtMoney(s.valorTraslado) : ''}</div>
         ${s.comentarioChofer ? `<div style="font-size:12px; color:var(--text-faint); margin-top:3px;">📝 ${escapeHtml(s.comentarioChofer)}</div>` : ''}
       </div>
       <div style="text-align:right; min-width:150px;">
@@ -1855,6 +1878,7 @@ function renderSoloCard(id){
       ` : ''}
       ${s.notas ? `<div>📝 ${escapeHtml(s.notas)}</div>` : ''}
       <div>💲 Valor: ${fmtMoney(s.valor)}</div>
+      ${(s.esTraslado && s.pago==='seguro' && s.valorTraslado) ? `<div>🛡️ Paga el seguro: ${fmtMoney(s.valorTraslado)}</div>` : ''}
       ${lineaExtra}
       <div>🛡️ ${s.pago==='seguro' ? 'Seguro' : 'Particular'}</div>
     </div>
