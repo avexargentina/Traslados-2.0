@@ -406,7 +406,7 @@
           <div class="metrics" id="liquidacion-metrics"></div>
 
           <div class="card" style="background:var(--panel2); margin-bottom:16px;">
-            <h2>Nueva liquidación</h2>
+            <h2>💵 Efectivo que te rindió el chofer</h2>
             <div class="row">
               <div class="field">
                 <label>Fecha</label>
@@ -428,11 +428,42 @@
                 <textarea id="liq-comentario" rows="2" placeholder="Cualquier detalle sobre esta liquidación"></textarea>
               </div>
             </div>
-            <div class="actions-row"><button class="btn primary" id="btn-guardar-liquidacion">Guardar liquidación</button></div>
+            <div class="actions-row"><button class="btn primary" id="btn-guardar-liquidacion">Guardar rendición</button></div>
           </div>
 
-          <div id="liquidaciones-list"></div>
-          <div class="empty" id="liquidaciones-empty" style="display:none;">Todavía no cargaste ninguna liquidación.</div>
+          <div id="liquidaciones-list" style="margin-bottom:24px;"></div>
+          <div class="empty" id="liquidaciones-empty" style="display:none; margin-bottom:24px;">Todavía no cargaste ninguna rendición.</div>
+
+          <div class="card" style="background:var(--panel2); margin-bottom:16px;">
+            <h2>🤝 Pago que vos le hiciste al chofer</h2>
+            <div class="row">
+              <div class="field">
+                <label>Fecha</label>
+                <input type="date" id="pago-fecha">
+              </div>
+              <div class="field">
+                <label>Monto pagado</label>
+                <input type="number" id="pago-monto" placeholder="0" min="0">
+              </div>
+              <div class="field">
+                <label>Medio</label>
+                <div class="segmented" id="seg-pago-medio">
+                  <button type="button" data-val="efectivo" class="on">💵 Efectivo</button>
+                  <button type="button" data-val="transferencia">🏦 Transferencia</button>
+                </div>
+              </div>
+            </div>
+            <div class="row">
+              <div class="field">
+                <label>Comentario (opcional)</label>
+                <textarea id="pago-comentario" rows="2" placeholder="Ej: adelanto de comisión de la semana"></textarea>
+              </div>
+            </div>
+            <div class="actions-row"><button class="btn primary" id="btn-guardar-pago">Guardar pago</button></div>
+          </div>
+
+          <div id="pagos-chofer-list"></div>
+          <div class="empty" id="pagos-chofer-empty" style="display:none;">Todavía no registraste ningún pago al chofer.</div>
         </div>
       </div>
 
@@ -648,6 +679,7 @@ const DEFAULT_CONFIG = {
 let config = null;
 let servicios = [];
 let liquidaciones = [];
+let pagosChofer = [];
 let seg = { pago:'particular', estadopago:'pendiente', tarifa:'tarifa1' };
 let editingId = null;
 
@@ -754,15 +786,18 @@ async function loadState(){
       config = parsed.config || deepClone(DEFAULT_CONFIG);
       servicios = parsed.servicios || [];
       liquidaciones = parsed.liquidaciones || [];
+      pagosChofer = parsed.pagosChofer || [];
     }catch(e){
       config = deepClone(DEFAULT_CONFIG);
       servicios = [];
       liquidaciones = [];
+      pagosChofer = [];
     }
   } else {
     config = deepClone(DEFAULT_CONFIG);
     servicios = [];
     liquidaciones = [];
+    pagosChofer = [];
   }
   if(config.alertarFaltantes === undefined) config.alertarFaltantes = true;
   if(!config.tarifas) config.tarifas = deepClone(DEFAULT_CONFIG.tarifas);
@@ -791,7 +826,7 @@ async function loadState(){
 }
 
 async function saveAll(){
-  const payload = JSON.stringify({config, servicios, liquidaciones});
+  const payload = JSON.stringify({config, servicios, liquidaciones, pagosChofer});
   const ok = await storageSetRaw(STORAGE_KEY, payload);
   updateStorageBanner();
   if(!ok){
@@ -1624,17 +1659,22 @@ async function borrarLiquidacion(id){
 
 function renderLiquidaciones(){
   if(!document.getElementById('liq-fecha').value) resetLiquidacionForm();
+  if(!document.getElementById('pago-fecha').value) document.getElementById('pago-fecha').value = new Date().toISOString().slice(0,10);
 
   const comisionTotal = servicios.filter(s=>s.estadoTrabajo==='finalizado').reduce((a,s)=> a + (corteChoferDeRegistro(s)||0), 0);
   const efectivoCobrado = servicios.filter(s=> s.estadoTrabajo==='finalizado' && s.pago==='particular' && s.medioPago==='efectivo').reduce((a,s)=> a + (s.valor||0), 0);
   const efectivoRendido = liquidaciones.reduce((a,l)=> a + (l.montoRendido||0), 0);
   const gastosTotales = liquidaciones.reduce((a,l)=> a + (l.gastos||[]).reduce((x,g)=>x+(g.monto||0),0), 0);
   const efectivoPendiente = efectivoCobrado - efectivoRendido;
+  const totalPagadoChofer = pagosChofer.reduce((a,p)=> a + (p.monto||0), 0);
+  const saldoPendiente = comisionTotal - totalPagadoChofer;
 
   document.getElementById('liquidacion-metrics').innerHTML = `
-    <div class="metric orange"><div class="lbl">Comisión acumulada (total)</div><div class="val">${fmtMoney(comisionTotal)}</div></div>
+    <div class="metric orange"><div class="lbl">Le corresponde (comisión total)</div><div class="val">${fmtMoney(comisionTotal)}</div></div>
+    <div class="metric green"><div class="lbl">Ya le pagamos</div><div class="val">${fmtMoney(totalPagadoChofer)}</div></div>
+    <div class="metric ${saldoPendiente>0?'yellow':(saldoPendiente<0?'orange':'green')}"><div class="lbl">Saldo pendiente</div><div class="val">${fmtMoney(saldoPendiente)}</div></div>
     <div class="metric"><div class="lbl">Efectivo cobrado (total)</div><div class="val">${fmtMoney(efectivoCobrado)}</div></div>
-    <div class="metric green"><div class="lbl">Efectivo ya rendido</div><div class="val">${fmtMoney(efectivoRendido)}</div></div>
+    <div class="metric"><div class="lbl">Efectivo ya rendido</div><div class="val">${fmtMoney(efectivoRendido)}</div></div>
     <div class="metric yellow"><div class="lbl">Efectivo pendiente de rendir</div><div class="val">${fmtMoney(efectivoPendiente)}</div></div>
     <div class="metric"><div class="lbl">Gastos registrados (total)</div><div class="val">${fmtMoney(gastosTotales)}</div></div>
   `;
@@ -1663,6 +1703,58 @@ function renderLiquidaciones(){
   wrap.querySelectorAll('button').forEach(b=>{
     b.addEventListener('click', ()=> borrarLiquidacion(b.dataset.id));
   });
+
+  const wrapPagos = document.getElementById('pagos-chofer-list');
+  wrapPagos.innerHTML = '';
+  const listaPagos = pagosChofer.slice().sort((a,b)=> new Date(b.fecha) - new Date(a.fecha));
+  document.getElementById('pagos-chofer-empty').style.display = listaPagos.length ? 'none' : 'block';
+  listaPagos.forEach(p=>{
+    const div = document.createElement('div');
+    div.className = 'config-item';
+    div.innerHTML = `
+      <div class="name">
+        <div style="font-family:var(--mono); font-size:13px;">${new Date(p.fecha+'T00:00:00').toLocaleDateString('es-AR')}</div>
+        <div style="font-family:var(--mono); font-size:14px; margin-top:2px;">Pagado: ${fmtMoney(p.monto)} <span class="badge neutro" style="margin-left:6px;">${p.medio==='transferencia'?'🏦 Transferencia':'💵 Efectivo'}</span></div>
+        ${p.comentario ? `<div style="font-size:12px; color:var(--text-faint); margin-top:3px;">📝 ${escapeHtml(p.comentario)}</div>` : ''}
+      </div>
+      <button class="btn small danger" data-id="${p.id}">Borrar</button>
+    `;
+    wrapPagos.appendChild(div);
+  });
+  wrapPagos.querySelectorAll('button').forEach(b=>{
+    b.addEventListener('click', ()=> borrarPagoChofer(b.dataset.id));
+  });
+}
+
+wireSegmented('seg-pago-medio', ()=>{});
+document.getElementById('btn-guardar-pago').addEventListener('click', async ()=>{
+  const fecha = document.getElementById('pago-fecha').value || new Date().toISOString().slice(0,10);
+  const monto = Number(document.getElementById('pago-monto').value) || 0;
+  const medio = document.querySelector('#seg-pago-medio button.on').dataset.val;
+  const comentario = document.getElementById('pago-comentario').value.trim();
+
+  const nuevo = {
+    id: Date.now()+'-'+Math.random().toString(36).slice(2,7),
+    fecha, monto, medio, comentario
+  };
+  pagosChofer.unshift(nuevo);
+  const ok = await saveAll();
+  if(ok){
+    toast('Pago registrado');
+    document.getElementById('pago-monto').value = '';
+    document.getElementById('pago-comentario').value = '';
+    renderLiquidaciones();
+  } else {
+    pagosChofer.shift();
+  }
+});
+async function borrarPagoChofer(id){
+  if(!confirm('¿Borrar este pago?')) return;
+  const prev = pagosChofer;
+  pagosChofer = pagosChofer.filter(p=>p.id!==id);
+  const ok = await saveAll();
+  if(ok){ renderLiquidaciones(); toast('Pago eliminado'); }
+  else { pagosChofer = prev; }
 }
 
 /* ---------- VISTA DE UN SOLO SERVICIO (link para el chofer) ---------- */
