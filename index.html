@@ -227,6 +227,25 @@
   }
   .logo-chip img{ display:block; height:22px; width:auto; }
 
+  .tarjeta-tap{ cursor:pointer; padding:4px; margin:-4px; border-radius:8px; transition:background 0.12s; }
+  .tarjeta-tap:hover, .tarjeta-tap:active{ background:rgba(255,255,255,0.04); }
+  .tarjeta-tap-hint{ font-size:11px; color:var(--orange); margin-top:6px; font-weight:600; }
+
+  .detalle-map-btn{
+    width:100%; justify-content:center; padding:13px; font-size:14.5px;
+    background:var(--panel2); border:1px solid var(--orange); color:var(--orange);
+    font-weight:700; margin-bottom:8px;
+  }
+  .detalle-map-btn:hover{ background:rgba(255,122,41,0.12); }
+  .detalle-call-btn{
+    width:100%; justify-content:center; padding:11px; font-size:14px;
+    background:var(--panel2); border:1px solid var(--line); color:var(--text);
+  }
+  .detalle-section-label{
+    font-family:var(--mono); font-size:11px; text-transform:uppercase; letter-spacing:0.03em;
+    color:var(--text-faint); margin:14px 0 6px;
+  }
+
   @media (max-width:520px){
     .metrics{ grid-template-columns:repeat(2,1fr); }
   }
@@ -703,6 +722,11 @@
   </div>
 </div>
 
+<!-- MODAL: detalle del servicio (tocar tarjeta) -->
+<div class="modal-overlay" id="modal-detalle-overlay">
+  <div class="card modal-box" id="modal-detalle-content" style="max-width:420px; max-height:88vh; overflow-y:auto; text-align:left;"></div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -1019,6 +1043,101 @@ document.getElementById('modal-finalizar-confirmar').addEventListener('click', a
   modalFinalizarId = null;
   modalFinalizarOnDone = null;
 });
+
+/* ---------- MODAL: detalle del servicio (popup al tocar la tarjeta) ---------- */
+function abrirDetalleServicio(id, onRefresh){
+  const s = servicios.find(x=>x.id===id);
+  const cont = document.getElementById('modal-detalle-content');
+  if(!s){ cont.innerHTML = '<div class="empty">No se encontró el servicio.</div>'; document.getElementById('modal-detalle-overlay').classList.add('show'); return; }
+
+  const tipoObj = tipoById(s.tipoServicioId);
+  const vehiculo = [s.marca, s.modelo].filter(Boolean).join(' ');
+  const corte = corteChoferDeRegistro(s);
+  const estadoTxt = s.estadoTrabajo==='finalizado' ? 'Finalizado' : (s.estadoTrabajo==='en_curso' ? 'En curso' : 'Pendiente');
+  const estadoClase = s.estadoTrabajo==='finalizado' ? 'finalizado' : (s.estadoTrabajo==='en_curso' ? 'pendiente' : 'neutro');
+
+  let html = `
+    <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:10px; margin-bottom:4px;">
+      <div>
+        <div style="font-family:var(--disp); text-transform:uppercase; letter-spacing:0.04em; font-size:18px; font-weight:700;">${escapeHtml(s.tipoServicioNombre)}</div>
+        <span class="ticket" style="margin-top:4px; display:inline-block;">${s.ticket}</span>
+        <span class="badge ${estadoClase}" style="margin-left:6px;">${estadoTxt}</span>
+      </div>
+      <button class="btn small" id="btn-cerrar-detalle" aria-label="Cerrar">✕</button>
+    </div>
+
+    <div style="line-height:2; font-size:15px; margin-top:14px;">
+      <div>👤 <b>${escapeHtml(s.cliente)}</b></div>
+      ${vehiculo ? `<div>🚗 ${escapeHtml(vehiculo)}</div>` : ''}
+      ${s.patente ? `<div>🔢 Patente: ${escapeHtml(s.patente)}</div>` : ''}
+      ${s.notas ? `<div>📝 ${escapeHtml(s.notas)}</div>` : ''}
+    </div>
+
+    ${s.telefono ? `
+    <div class="detalle-section-label">Contacto</div>
+    <a href="tel:${escapeHtml(s.telefono)}" class="btn detalle-call-btn" style="text-decoration:none;">📞 Llamar a ${escapeHtml(s.cliente)} · ${escapeHtml(s.telefono)}</a>
+    ` : ''}
+
+    ${s.origen ? `
+    <div class="detalle-section-label">📍 Origen</div>
+    <div style="font-size:14px; margin-bottom:8px;">${escapeHtml(s.origen)}</div>
+    ${s.linkOrigen ? `<button type="button" class="btn detalle-map-btn" data-open="${escapeHtml(s.linkOrigen)}">🗺️ Abrir origen en Maps</button>` : `<button type="button" class="btn detalle-map-btn" data-open="${'https://www.google.com/maps/search/?api=1&query='+encodeURIComponent(s.origen)}">🗺️ Buscar origen en Maps</button>`}
+    ` : ''}
+
+    ${(s.esTraslado && s.destino) ? `
+    <div class="detalle-section-label">📍 Destino</div>
+    <div style="font-size:14px; margin-bottom:8px;">${escapeHtml(s.destino)}</div>
+    ${s.linkDestino ? `<button type="button" class="btn detalle-map-btn" data-open="${escapeHtml(s.linkDestino)}">🗺️ Abrir destino en Maps</button>` : `<button type="button" class="btn detalle-map-btn" data-open="${'https://www.google.com/maps/search/?api=1&query='+encodeURIComponent(s.destino)}">🗺️ Buscar destino en Maps</button>`}
+    ` : ''}
+
+    <div class="detalle-section-label">Plata</div>
+    <div style="font-family:var(--mono); font-size:14.5px; line-height:1.9;">
+      <div>💲 Valor: ${fmtMoney(s.valor)}</div>
+      ${(s.esTraslado && s.pago==='seguro' && s.valorTraslado) ? `<div>🛡️ Paga el seguro: ${fmtMoney(s.valorTraslado)}</div>` : ''}
+      <div>${s.pago==='seguro' ? '🛡️ Seguro' : '🧾 Particular'}</div>
+      ${corte!==null ? `<div style="color:var(--green);">🚚 Te corresponde: <b>${fmtMoney(corte)}</b></div>` : ''}
+    </div>
+  `;
+
+  if(s.estadoTrabajo==='pendiente'){
+    html += `<div class="actions-row" style="margin-top:18px;"><button class="btn primary" data-act="arrancar" data-id="${s.id}" style="width:100%; justify-content:center;">▶ Arrancar</button></div>`;
+  } else if(s.estadoTrabajo==='en_curso'){
+    html += `
+      <div class="actions-row" style="margin-top:18px; flex-direction:column; align-items:stretch;">
+        <button class="btn" data-act="pausar" data-id="${s.id}" style="width:100%; justify-content:center; margin-bottom:8px;">⏸ Pausar</button>
+        <button class="btn primary" data-act="finalizar" data-id="${s.id}" style="width:100%; justify-content:center;">✓ Finalizar</button>
+      </div>`;
+  } else if(s.estadoTrabajo==='finalizado'){
+    html += `<div class="actions-row" style="margin-top:18px;"><button class="btn" data-act="editar-final" data-id="${s.id}" style="width:100%; justify-content:center;">Editar pago / comentario</button></div>`;
+  }
+
+  cont.innerHTML = html;
+  document.getElementById('modal-detalle-overlay').classList.add('show');
+
+  document.getElementById('btn-cerrar-detalle').addEventListener('click', cerrarDetalleServicio);
+  cont.querySelectorAll('[data-open]').forEach(b=>{
+    b.addEventListener('click', ()=> window.open(b.dataset.open, '_blank'));
+  });
+  cont.querySelectorAll('[data-act]').forEach(b=>{
+    b.addEventListener('click', ()=>{
+      const sid = b.dataset.id;
+      const refrescar = onRefresh || renderChofer;
+      if(b.dataset.act==='arrancar'){
+        cerrarDetalleServicio();
+        arrancarServicio(sid, refrescar);
+      } else if(b.dataset.act==='pausar'){
+        cerrarDetalleServicio();
+        pausarServicio(sid, refrescar);
+      } else if(b.dataset.act==='finalizar' || b.dataset.act==='editar-final'){
+        cerrarDetalleServicio();
+        abrirModalFinalizar(sid, refrescar);
+      }
+    });
+  });
+}
+function cerrarDetalleServicio(){
+  document.getElementById('modal-detalle-overlay').classList.remove('show');
+}
 
 async function arrancarServicio(id, onDone){
   const s = servicios.find(x=>x.id===id);
@@ -1515,11 +1634,12 @@ function tarjetaChoferInfo(s){
     ubicacion = `<div style="font-size:12px; color:var(--text-dim); margin-top:2px;">📍 ${escapeHtml(s.origen)}</div>`;
   }
   return `
-    <div class="name">
+    <div class="name tarjeta-tap" data-detalle="${s.id}">
       <span class="ticket">${s.ticket}</span> ${escapeHtml(s.tipoServicioNombre)}
       <div style="color:var(--text-dim); font-size:12.5px; margin-top:3px;">${escapeHtml(s.cliente)}${vehiculo ? ' · '+escapeHtml(vehiculo) : ''}</div>
       ${ubicacion}
       <div style="font-family:var(--mono); font-size:12.5px; margin-top:3px;">Cobrar: ${fmtMoney(s.valor)}${lineaExtra}</div>
+      <div class="tarjeta-tap-hint">Tocá para ver el detalle y el mapa ›</div>
     </div>`;
 }
 
@@ -1575,6 +1695,9 @@ function renderChofer(){
       else if(b.dataset.act==='subir') moverEnCola(id, -1).then(renderChofer);
       else if(b.dataset.act==='bajar') moverEnCola(id, 1).then(renderChofer);
     });
+  });
+  document.querySelectorAll('#chofer-en-curso [data-detalle], #chofer-list [data-detalle]').forEach(el=>{
+    el.addEventListener('click', ()=> abrirDetalleServicio(el.dataset.detalle, renderChofer));
   });
 }
 
@@ -1637,13 +1760,14 @@ function renderHistorial(){
     const div = document.createElement('div');
     div.className = 'config-item';
     div.innerHTML = `
-      <div class="name">
+      <div class="name tarjeta-tap" data-detalle="${s.id}">
         <span class="ticket">${s.ticket}</span> ${escapeHtml(s.tipoServicioNombre)}
         <div style="color:var(--text-dim); font-size:12px; margin-top:2px;">${fmtFecha(s.fecha)} · ${escapeHtml(s.cliente)}</div>
         ${vehiculo ? `<div style="font-size:12px; color:var(--text-dim); margin-top:2px;">🚗 ${escapeHtml(vehiculo)}</div>` : ''}
         ${ubicacion}
         <div style="font-family:var(--mono); font-size:12px; color:var(--text-faint); margin-top:2px;">Valor: ${fmtMoney(s.valor)}${(s.esTraslado && s.pago==='seguro' && s.valorTraslado) ? ' · Seguro: '+fmtMoney(s.valorTraslado) : ''}</div>
         ${s.comentarioChofer ? `<div style="font-size:12px; color:var(--text-faint); margin-top:3px;">📝 ${escapeHtml(s.comentarioChofer)}</div>` : ''}
+        <div class="tarjeta-tap-hint">Tocá para ver el detalle ›</div>
       </div>
       <div style="text-align:right; min-width:150px;">
         <span class="badge ${medioClase}">${medioTxt}</span>
@@ -1661,6 +1785,9 @@ function renderHistorial(){
 
   wrap.querySelectorAll('button[data-act="editar-final"]').forEach(b=>{
     b.addEventListener('click', ()=> abrirModalFinalizar(b.dataset.id, renderHistorial));
+  });
+  wrap.querySelectorAll('[data-detalle]').forEach(el=>{
+    el.addEventListener('click', ()=> abrirDetalleServicio(el.dataset.detalle, renderHistorial));
   });
 }
 document.getElementById('historial-periodo').addEventListener('change', renderHistorial);
