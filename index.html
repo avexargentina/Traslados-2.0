@@ -143,6 +143,7 @@
   .badge.neutro{ color:var(--text-dim); border-color:var(--line); }
   .badge.finalizado{ color:var(--green); border-color:var(--green); }
   .badge.nopago{ color:var(--red); border-color:var(--red); }
+  .badge.cancelado{ color:var(--red); border-color:var(--red); }
 
   .empty{ text-align:center; padding:40px 20px; color:var(--text-faint); font-size:13.5px; }
 
@@ -439,7 +440,7 @@
             <thead>
               <tr>
                 <th>OT</th><th>Fecha</th><th>Cliente</th><th>Servicio</th><th>Vehículo</th>
-                <th>Estado</th><th>Valor</th><th></th>
+                <th>Estado</th><th>Valor</th><th>Avex</th><th>Chofer</th><th></th>
               </tr>
             </thead>
             <tbody id="tbl-registro-body"></tbody>
@@ -741,6 +742,52 @@
   <div class="card modal-box" id="modal-detalle-content" style="max-width:420px; max-height:88vh; overflow-y:auto; text-align:left;"></div>
 </div>
 
+<!-- MODAL: cancelar servicio (solo admin) -->
+<div class="modal-overlay" id="modal-cancelar-overlay">
+  <div class="card modal-box" style="max-width:420px;">
+    <h2 style="border:none; margin-bottom:10px;">Cancelar servicio</h2>
+    <div class="hint" style="margin-bottom:12px;">Cargá cómo quedó el reparto de esta cancelación. Nada se calcula solo — lo definís vos.</div>
+    <div class="row">
+      <div class="field">
+        <label>Valor final del servicio (lo que efectivamente se cobró)</label>
+        <input type="number" id="cancelar-valor" placeholder="0" min="0">
+      </div>
+    </div>
+    <div class="row">
+      <div class="field">
+        <label>% que se lleva el chofer</label>
+        <div style="display:flex; gap:6px;">
+          <input type="number" id="cancelar-pct-chofer" placeholder="0" min="0" max="100">
+          <button type="button" class="btn small" id="btn-cancelar-aplicar-pct">Aplicar %</button>
+        </div>
+      </div>
+    </div>
+    <div class="row">
+      <div class="field">
+        <label>Monto para el chofer</label>
+        <input type="number" id="cancelar-monto-chofer" placeholder="0" min="0">
+      </div>
+      <div class="field">
+        <label>Monto para Avex</label>
+        <div style="display:flex; gap:6px;">
+          <input type="number" id="cancelar-monto-avex" placeholder="0" min="0">
+          <button type="button" class="btn small" id="btn-cancelar-auto-avex">Auto (resto)</button>
+        </div>
+      </div>
+    </div>
+    <div class="row">
+      <div class="field">
+        <label>Comentario (opcional)</label>
+        <textarea id="cancelar-comentario" rows="2" placeholder="Ej: el chofer ya había salido cuando cancelaron"></textarea>
+      </div>
+    </div>
+    <div class="actions-row">
+      <button class="btn" id="modal-cancelar-cerrar">Volver</button>
+      <button class="btn primary" id="modal-cancelar-confirmar">Confirmar cancelación</button>
+    </div>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -996,13 +1043,36 @@ function calcCorteChofer(tipo, s){
   }
   return null;
 }
+// Base de valor sobre la que se calcula el reparto (lo que paga el seguro en traslados
+// por seguro, o el valor cobrado al cliente en cualquier otro caso).
+function baseValorServicio(s){
+  const tipo = tipoById(s.tipoServicioId);
+  if(tipo && tipo.esTraslado && s.pago==='seguro' && s.valorTraslado!==undefined && s.valorTraslado!==null){
+    return Number(s.valorTraslado)||0;
+  }
+  return Number(s.valor)||0;
+}
 // Si el servicio ya está finalizado, usa el corte "congelado" al momento de finalizarlo
 // (no se recalcula si después cambian las tarifas o comisiones en Configuración).
+// Si el servicio fue cancelado, usa el reparto manual que cargó el admin al cancelarlo.
 function corteChoferDeRegistro(s){
+  if(s.estadoTrabajo==='cancelado'){
+    return (s.montoChoferCancelado!==undefined && s.montoChoferCancelado!==null) ? s.montoChoferCancelado : null;
+  }
   if(s.estadoTrabajo==='finalizado' && s.corteChofer!==undefined && s.corteChofer!==null){
     return s.corteChofer;
   }
   return calcCorteChofer(tipoById(s.tipoServicioId), s);
+}
+// Lo que le queda a Avex: si está cancelado, el monto manual que cargó el admin;
+// si no, la base del servicio menos lo que le corresponde al chofer.
+function corteAvexDeRegistro(s){
+  if(s.estadoTrabajo==='cancelado'){
+    return (s.montoAvexCancelado!==undefined && s.montoAvexCancelado!==null) ? s.montoAvexCancelado : null;
+  }
+  const corteChofer = corteChoferDeRegistro(s);
+  if(corteChofer===null) return null;
+  return baseValorServicio(s) - corteChofer;
 }
 
 /* ---------- ESTADO DE TRABAJO (pendiente / en_curso / finalizado) ---------- */
@@ -1067,8 +1137,8 @@ function abrirDetalleServicio(id, onRefresh){
   const tipoObj = tipoById(s.tipoServicioId);
   const vehiculo = [s.marca, s.modelo].filter(Boolean).join(' ');
   const corte = corteChoferDeRegistro(s);
-  const estadoTxt = s.estadoTrabajo==='finalizado' ? 'Finalizado' : (s.estadoTrabajo==='en_curso' ? 'En curso' : 'Pendiente');
-  const estadoClase = s.estadoTrabajo==='finalizado' ? 'finalizado' : (s.estadoTrabajo==='en_curso' ? 'pendiente' : 'neutro');
+  const estadoTxt = s.estadoTrabajo==='finalizado' ? 'Finalizado' : s.estadoTrabajo==='cancelado' ? 'Cancelado' : (s.estadoTrabajo==='en_curso' ? 'En curso' : 'Pendiente');
+  const estadoClase = s.estadoTrabajo==='finalizado' ? 'finalizado' : s.estadoTrabajo==='cancelado' ? 'cancelado' : (s.estadoTrabajo==='en_curso' ? 'pendiente' : 'neutro');
 
   let html = `
     <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:10px; margin-bottom:4px;">
@@ -1123,6 +1193,8 @@ function abrirDetalleServicio(id, onRefresh){
       </div>`;
   } else if(s.estadoTrabajo==='finalizado'){
     html += `<div class="actions-row" style="margin-top:18px;"><button class="btn" data-act="editar-final" data-id="${s.id}" style="width:100%; justify-content:center;">Editar pago / comentario</button></div>`;
+  } else if(s.estadoTrabajo==='cancelado'){
+    html += `<div class="hint" style="margin-top:18px;">🚫 Este servicio fue cancelado.${s.comentarioCancelacion ? ' '+escapeHtml(s.comentarioCancelacion) : ''}</div>`;
   }
 
   cont.innerHTML = html;
@@ -1174,6 +1246,53 @@ async function pausarServicio(id, onDone){
   const ok = await saveAll();
   if(ok){ toast('Pausado'); onDone(); }
 }
+
+/* ---------- CANCELAR SERVICIO (solo admin) ---------- */
+let cancelarServicioId = null;
+function abrirModalCancelar(id){
+  const s = servicios.find(x=>x.id===id);
+  if(!s) return;
+  cancelarServicioId = id;
+  const tipo = tipoById(s.tipoServicioId);
+  const yaCancelado = s.estadoTrabajo==='cancelado';
+  const baseActual = yaCancelado ? s.valorCancelado : baseValorServicio(s);
+  document.getElementById('cancelar-valor').value = baseActual || '';
+  document.getElementById('cancelar-pct-chofer').value = yaCancelado ? '' : ((tipo && tipo.esTraslado && tipo.comision && tipo.comision.tipo==='porcentaje') ? tipo.comision.valor : '');
+  document.getElementById('cancelar-monto-chofer').value = yaCancelado ? s.montoChoferCancelado : '';
+  document.getElementById('cancelar-monto-avex').value = yaCancelado ? s.montoAvexCancelado : '';
+  document.getElementById('cancelar-comentario').value = yaCancelado ? (s.comentarioCancelacion || '') : '';
+  document.getElementById('modal-cancelar-overlay').classList.add('show');
+}
+document.getElementById('modal-cancelar-cerrar').addEventListener('click', ()=>{
+  document.getElementById('modal-cancelar-overlay').classList.remove('show');
+  cancelarServicioId = null;
+});
+document.getElementById('btn-cancelar-aplicar-pct').addEventListener('click', ()=>{
+  const valor = Number(document.getElementById('cancelar-valor').value)||0;
+  const pct = Number(document.getElementById('cancelar-pct-chofer').value)||0;
+  document.getElementById('cancelar-monto-chofer').value = Math.round(valor*pct/100);
+});
+document.getElementById('btn-cancelar-auto-avex').addEventListener('click', ()=>{
+  const valor = Number(document.getElementById('cancelar-valor').value)||0;
+  const montoChofer = Number(document.getElementById('cancelar-monto-chofer').value)||0;
+  document.getElementById('cancelar-monto-avex').value = Math.max(0, valor - montoChofer);
+});
+document.getElementById('modal-cancelar-confirmar').addEventListener('click', async ()=>{
+  const s = servicios.find(x=>x.id===cancelarServicioId);
+  if(!s){ document.getElementById('modal-cancelar-overlay').classList.remove('show'); return; }
+  const prev = { estadoTrabajo:s.estadoTrabajo, valorCancelado:s.valorCancelado, montoChoferCancelado:s.montoChoferCancelado, montoAvexCancelado:s.montoAvexCancelado, comentarioCancelacion:s.comentarioCancelacion };
+  s.estadoTrabajo = 'cancelado';
+  s.valorCancelado = Number(document.getElementById('cancelar-valor').value)||0;
+  s.montoChoferCancelado = Number(document.getElementById('cancelar-monto-chofer').value)||0;
+  s.montoAvexCancelado = Number(document.getElementById('cancelar-monto-avex').value)||0;
+  s.comentarioCancelacion = document.getElementById('cancelar-comentario').value.trim();
+  const ok = await saveAll();
+  document.getElementById('modal-cancelar-overlay').classList.remove('show');
+  if(ok){ toast('Servicio cancelado'); renderRegistro(); }
+  else { Object.assign(s, prev); }
+  cancelarServicioId = null;
+});
+
 function escapeHtml(s){
   return String(s||'').replace(/[&<>"']/g, c=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
 }
@@ -1500,9 +1619,12 @@ function renderRegistro(){
       ? '<span class="badge seguro">Seguro</span>'
       : `<span class="badge ${s.estadoPago==='pagado'?'pagado':'pendiente'}">${s.estadoPago==='pagado'?'Pagado':'Pendiente'}</span>`;
     const medioPagoBadge = s.medioPago ? `<div style="margin-top:3px;"><span class="badge ${s.medioPago==='no_pago'?'nopago':'neutro'}">${s.medioPago==='efectivo'?'💵 Efectivo':s.medioPago==='transferencia'?'🏦 Transferencia':'🚫 No pagó'}</span></div>` : '';
-    const estadoTrabajoClase = s.estadoTrabajo==='finalizado' ? 'finalizado' : (s.estadoTrabajo==='en_curso' ? 'pendiente' : 'neutro');
-    const estadoTrabajoTexto = s.estadoTrabajo==='finalizado' ? 'Finalizado' : (s.estadoTrabajo==='en_curso' ? 'En curso' : 'Pendiente');
+    const estadoTrabajoClase = s.estadoTrabajo==='finalizado' ? 'finalizado' : s.estadoTrabajo==='cancelado' ? 'cancelado' : (s.estadoTrabajo==='en_curso' ? 'pendiente' : 'neutro');
+    const estadoTrabajoTexto = s.estadoTrabajo==='finalizado' ? 'Finalizado' : s.estadoTrabajo==='cancelado' ? 'Cancelado' : (s.estadoTrabajo==='en_curso' ? 'En curso' : 'Pendiente');
     const estadoTrabajoBadge = `<div style="margin-top:3px;"><span class="badge ${estadoTrabajoClase}">${estadoTrabajoTexto}</span></div>`;
+    const corteChofer = corteChoferDeRegistro(s);
+    const corteAvex = corteAvexDeRegistro(s);
+    const puedeCancelar = s.estadoTrabajo!=='finalizado';
     tr.innerHTML = `
       <td><span class="ticket">${s.ticket}</span></td>
       <td>${fmtFecha(s.fecha)}</td>
@@ -1510,11 +1632,14 @@ function renderRegistro(){
       <td>${escapeHtml(s.tipoServicioNombre)}${s.esTraslado ? '<div style="font-size:11px;color:var(--text-faint)">'+escapeHtml(s.origen)+' → '+escapeHtml(s.destino)+'</div>' : (s.origen ? '<div style="font-size:11px;color:var(--text-faint)">📍 '+escapeHtml(s.origen)+'</div>' : '')}</td>
       <td>${escapeHtml(vehiculo)||'—'}</td>
       <td>${pagoBadge}${medioPagoBadge}${estadoTrabajoBadge}</td>
-      <td>${fmtMoney(s.valor)}${(s.esTraslado && s.pago==='seguro' && s.valorTraslado) ? '<div style="font-size:11px;color:var(--text-faint)">Seguro: '+fmtMoney(s.valorTraslado)+'</div>' : ''}</td>
+      <td>${fmtMoney(s.valor)}${(s.esTraslado && s.pago==='seguro' && s.valorTraslado) ? '<div style="font-size:11px;color:var(--text-faint)">Seguro: '+fmtMoney(s.valorTraslado)+'</div>' : ''}${s.estadoTrabajo==='cancelado' ? '<div style="font-size:11px;color:var(--text-faint)">Final: '+fmtMoney(s.valorCancelado)+'</div>' : ''}</td>
+      <td>${corteAvex!==null ? fmtMoney(corteAvex) : '—'}</td>
+      <td>${corteChofer!==null ? fmtMoney(corteChofer) : '—'}</td>
       <td>
         <button class="btn small" data-act="link" data-id="${s.id}">Link</button>
         <button class="btn small" data-act="copiar" data-id="${s.id}">Copiar</button>
         <button class="btn small" data-act="editar" data-id="${s.id}">Editar</button>
+        ${puedeCancelar ? `<button class="btn small danger" data-act="cancelar" data-id="${s.id}">${s.estadoTrabajo==='cancelado'?'Editar cancelación':'Cancelar'}</button>` : ''}
         <button class="btn small danger" data-act="borrar" data-id="${s.id}">Borrar</button>
       </td>
     `;
@@ -1528,16 +1653,21 @@ function renderRegistro(){
       if(b.dataset.act==='editar') editarServicio(id);
       if(b.dataset.act==='borrar') borrarServicio(id);
       if(b.dataset.act==='link') copiarLinkServicio(id);
+      if(b.dataset.act==='cancelar') abrirModalCancelar(id);
     });
   });
 
   const totalCobrado = list.reduce((a,s)=> a + (s.pago==='particular' ? s.valor : 0), 0);
   const totalPendienteCobro = list.reduce((a,s)=> a + (s.pago==='particular' && s.estadoPago!=='pagado' ? s.valor : 0), 0);
+  const totalAvex = list.reduce((a,s)=> a + (corteAvexDeRegistro(s)||0), 0);
+  const totalChofer = list.reduce((a,s)=> a + (corteChoferDeRegistro(s)||0), 0);
   const metrics = document.getElementById('metrics-registro');
   metrics.innerHTML = `
     <div class="metric orange"><div class="lbl">Servicios listados</div><div class="val">${list.length}</div></div>
     <div class="metric green"><div class="lbl">Total facturado particular</div><div class="val">${fmtMoney(totalCobrado)}</div></div>
     <div class="metric yellow"><div class="lbl">Pendiente de cobro</div><div class="val">${fmtMoney(totalPendienteCobro)}</div></div>
+    <div class="metric"><div class="lbl">Se lleva Avex</div><div class="val">${fmtMoney(totalAvex)}</div></div>
+    <div class="metric"><div class="lbl">Se lleva el chofer</div><div class="val">${fmtMoney(totalChofer)}</div></div>
   `;
 }
 function filteredServicios(){
@@ -1758,7 +1888,7 @@ function inicioDeSemana(){
 function renderHistorial(){
   const desde = document.getElementById('historial-desde').value;
   const hasta = document.getElementById('historial-hasta').value;
-  let list = servicios.filter(s=>s.estadoTrabajo==='finalizado' && enRangoFecha(s.fecha, desde, hasta));
+  let list = servicios.filter(s=> (s.estadoTrabajo==='finalizado' || s.estadoTrabajo==='cancelado') && enRangoFecha(s.fecha, desde, hasta));
   list = list.slice().sort((a,b)=> new Date(b.fecha) - new Date(a.fecha));
 
   let totalCorte = 0;
@@ -1770,11 +1900,12 @@ function renderHistorial(){
     const tipoObj = tipoById(s.tipoServicioId);
     const corte = corteChoferDeRegistro(s);
     if(corte!==null) totalCorte += corte;
-    const medioTxt = s.medioPago==='efectivo' ? '💵 Efectivo'
+    const medioTxt = s.estadoTrabajo==='cancelado' ? '🚫 Cancelado'
+      : s.medioPago==='efectivo' ? '💵 Efectivo'
       : s.medioPago==='transferencia' ? '🏦 Transferencia'
       : s.medioPago==='no_pago' ? '🚫 No pagó'
       : (s.pago==='seguro' ? 'Seguro' : '—');
-    const medioClase = s.medioPago==='no_pago' ? 'nopago' : 'neutro';
+    const medioClase = (s.medioPago==='no_pago' || s.estadoTrabajo==='cancelado') ? (s.estadoTrabajo==='cancelado' ? 'cancelado' : 'nopago') : 'neutro';
     const vehiculo = [s.marca, s.modelo].filter(Boolean).join(' ') + (s.patente ? ' · '+s.patente : '');
     let ubicacion = '';
     if(s.esTraslado && s.origen){
@@ -1797,7 +1928,7 @@ function renderHistorial(){
       <div style="text-align:right; min-width:150px;">
         <span class="badge ${medioClase}">${medioTxt}</span>
         <div style="font-family:var(--mono); font-size:13px; margin-top:6px;">${corte!==null ? 'Te corresponde: '+fmtMoney(corte) : ''}</div>
-        <button class="btn small" data-act="editar-final" data-id="${s.id}" style="margin-top:6px;">Editar</button>
+        ${s.estadoTrabajo==='finalizado' ? `<button class="btn small" data-act="editar-final" data-id="${s.id}" style="margin-top:6px;">Editar</button>` : ''}
       </div>
     `;
     wrap.appendChild(div);
@@ -1917,7 +2048,7 @@ function renderLiquidaciones(){
   const desde = document.getElementById('liq-filtro-desde').value;
   const hasta = document.getElementById('liq-filtro-hasta').value;
 
-  const serviciosFiltrados = servicios.filter(s=> s.estadoTrabajo==='finalizado' && enRangoFecha(s.fecha, desde, hasta));
+  const serviciosFiltrados = servicios.filter(s=> (s.estadoTrabajo==='finalizado' || s.estadoTrabajo==='cancelado') && enRangoFecha(s.fecha, desde, hasta));
   const liquidacionesFiltradas = liquidaciones.filter(l=> enRangoFecha(l.fecha, desde, hasta));
   const pagosFiltrados = pagosChofer.filter(p=> enRangoFecha(p.fecha, desde, hasta));
 
