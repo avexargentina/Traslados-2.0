@@ -66,7 +66,7 @@
   nav.tabs button.active{ color:var(--orange); border-bottom-color:var(--orange); }
   nav.tabs button:hover{ color:var(--text); }
 
-  main{ max-width:900px; margin:0 auto; padding:18px 16px 60px; }
+  main{ max-width:1240px; margin:0 auto; padding:18px 16px 60px; }
   .view{ display:none; }
   .view.active{ display:block; }
 
@@ -128,9 +128,13 @@
     color:var(--text-faint); padding:6px 8px; border-bottom:1px solid var(--line);
     letter-spacing:0.03em;
   }
-  td{ padding:8px; border-bottom:1px solid var(--line-soft); vertical-align:top; }
+  td{ padding:7px 8px; border-bottom:1px solid var(--line-soft); vertical-align:middle; }
   tr:hover td{ background:rgba(255,255,255,0.02); }
   .tbl-wrap{ overflow-x:auto; }
+  #tbl-registro-body tr{ cursor:pointer; }
+  .truncate-cell{
+    display:block; max-width:170px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  }
 
   .badge{
     font-family:var(--mono); font-size:10.5px; text-transform:uppercase; font-weight:700;
@@ -440,7 +444,7 @@
             <thead>
               <tr>
                 <th>OT</th><th>Fecha</th><th>Cliente</th><th>Servicio</th><th>Vehículo</th>
-                <th>Estado</th><th>Valor</th><th>Avex</th><th>Chofer</th><th></th>
+                <th>Pago</th><th>Estado</th><th>Valor</th><th>Avex</th><th>Chofer</th><th></th>
               </tr>
             </thead>
             <tbody id="tbl-registro-body"></tbody>
@@ -1614,6 +1618,7 @@ function renderRegistro(){
 
   list.forEach(s=>{
     const tr = document.createElement('tr');
+    tr.dataset.detalle = s.id;
     const vehiculo = [s.marca, s.modelo].filter(Boolean).join(' ') + (s.patente ? ' · '+s.patente : '');
     const pagoBadge = s.pago==='seguro'
       ? '<span class="badge seguro">Seguro</span>'
@@ -1621,18 +1626,19 @@ function renderRegistro(){
     const medioPagoBadge = s.medioPago ? `<div style="margin-top:3px;"><span class="badge ${s.medioPago==='no_pago'?'nopago':'neutro'}">${s.medioPago==='efectivo'?'💵 Efectivo':s.medioPago==='transferencia'?'🏦 Transferencia':'🚫 No pagó'}</span></div>` : '';
     const estadoTrabajoClase = s.estadoTrabajo==='finalizado' ? 'finalizado' : s.estadoTrabajo==='cancelado' ? 'cancelado' : (s.estadoTrabajo==='en_curso' ? 'pendiente' : 'neutro');
     const estadoTrabajoTexto = s.estadoTrabajo==='finalizado' ? 'Finalizado' : s.estadoTrabajo==='cancelado' ? 'Cancelado' : (s.estadoTrabajo==='en_curso' ? 'En curso' : 'Pendiente');
-    const estadoTrabajoBadge = `<div style="margin-top:3px;"><span class="badge ${estadoTrabajoClase}">${estadoTrabajoTexto}</span></div>`;
+    const estadoTrabajoBadge = `<span class="badge ${estadoTrabajoClase}">${estadoTrabajoTexto}</span>`;
     const corteChofer = corteChoferDeRegistro(s);
     const corteAvex = corteAvexDeRegistro(s);
     const puedeCancelar = s.estadoTrabajo!=='finalizado';
     tr.innerHTML = `
       <td><span class="ticket">${s.ticket}</span></td>
       <td>${fmtFecha(s.fecha)}</td>
-      <td>${escapeHtml(s.cliente)}<div style="font-size:11px;color:var(--text-faint)">${escapeHtml(s.telefono)}</div></td>
-      <td>${escapeHtml(s.tipoServicioNombre)}${s.esTraslado ? '<div style="font-size:11px;color:var(--text-faint)">'+escapeHtml(s.origen)+' → '+escapeHtml(s.destino)+'</div>' : (s.origen ? '<div style="font-size:11px;color:var(--text-faint)">📍 '+escapeHtml(s.origen)+'</div>' : '')}</td>
-      <td>${escapeHtml(vehiculo)||'—'}</td>
-      <td>${pagoBadge}${medioPagoBadge}${estadoTrabajoBadge}</td>
-      <td>${fmtMoney(s.valor)}${(s.esTraslado && s.pago==='seguro' && s.valorTraslado) ? '<div style="font-size:11px;color:var(--text-faint)">Seguro: '+fmtMoney(s.valorTraslado)+'</div>' : ''}${s.estadoTrabajo==='cancelado' ? '<div style="font-size:11px;color:var(--text-faint)">Final: '+fmtMoney(s.valorCancelado)+'</div>' : ''}</td>
+      <td><span class="truncate-cell" style="max-width:130px;" title="${escapeHtml(s.cliente)}">${escapeHtml(s.cliente)}</span></td>
+      <td><span class="truncate-cell" title="${escapeHtml(s.tipoServicioNombre)}">${escapeHtml(s.tipoServicioNombre)}</span></td>
+      <td><span class="truncate-cell" title="${escapeHtml(vehiculo)}">${escapeHtml(vehiculo)||'—'}</span></td>
+      <td>${pagoBadge}${medioPagoBadge}</td>
+      <td>${estadoTrabajoBadge}</td>
+      <td>${fmtMoney(s.valor)}</td>
       <td>${corteAvex!==null ? fmtMoney(corteAvex) : '—'}</td>
       <td>${corteChofer!==null ? fmtMoney(corteChofer) : '—'}</td>
       <td>
@@ -1647,7 +1653,8 @@ function renderRegistro(){
   });
 
   tbody.querySelectorAll('button').forEach(b=>{
-    b.addEventListener('click', ()=>{
+    b.addEventListener('click', (e)=>{
+      e.stopPropagation();
       const id = b.dataset.id;
       if(b.dataset.act==='copiar') copiarServicio(id);
       if(b.dataset.act==='editar') editarServicio(id);
@@ -1695,6 +1702,11 @@ document.getElementById('btn-filt-fecha-limpiar').addEventListener('click', ()=>
   document.getElementById('filt-desde').value = '';
   document.getElementById('filt-hasta').value = '';
   renderRegistro();
+});
+document.getElementById('tbl-registro-body').addEventListener('click', e=>{
+  if(e.target.closest('button')) return;
+  const tr = e.target.closest('tr[data-detalle]');
+  if(tr) abrirDetalleServicio(tr.dataset.detalle, renderRegistro);
 });
 
 function buildResumenTexto(s){
