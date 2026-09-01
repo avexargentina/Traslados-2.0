@@ -2065,6 +2065,10 @@ function renderLiquidaciones(){
   const pagosFiltrados = pagosChofer.filter(p=> enRangoFecha(p.fecha, desde, hasta));
 
   const comisionTotal = serviciosFiltrados.reduce((a,s)=> a + (corteChoferDeRegistro(s)||0), 0);
+  const comisionBateria = serviciosFiltrados.filter(s=>{
+    const t = tipoById(s.tipoServicioId);
+    return t && !t.esTraslado && t.modoComision==='comision';
+  }).reduce((a,s)=> a + (corteChoferDeRegistro(s)||0), 0);
   const efectivoCobrado = serviciosFiltrados.filter(s=> s.pago==='particular' && s.medioPago==='efectivo').reduce((a,s)=> a + (s.valor||0), 0);
   const efectivoRendido = liquidacionesFiltradas.reduce((a,l)=> a + (l.montoRendido||0), 0);
   const gastosTotales = liquidacionesFiltradas.reduce((a,l)=> a + (l.gastos||[]).reduce((x,g)=>x+(g.monto||0),0), 0);
@@ -2074,6 +2078,7 @@ function renderLiquidaciones(){
 
   document.getElementById('liquidacion-metrics').innerHTML = `
     <div class="metric orange"><div class="lbl">Le corresponde (comisión)</div><div class="val">${fmtMoney(comisionTotal)}</div></div>
+    <div class="metric"><div class="lbl">Comisión venta batería</div><div class="val">${fmtMoney(comisionBateria)}</div></div>
     <div class="metric green"><div class="lbl">Ya le pagamos</div><div class="val">${fmtMoney(totalPagadoChofer)}</div></div>
     <div class="metric ${saldoPendiente>0?'yellow':(saldoPendiente<0?'orange':'green')}"><div class="lbl">Saldo pendiente</div><div class="val">${fmtMoney(saldoPendiente)}</div></div>
     <div class="metric"><div class="lbl">Efectivo cobrado</div><div class="val">${fmtMoney(efectivoCobrado)}</div></div>
