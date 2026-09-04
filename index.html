@@ -136,6 +136,21 @@
     display:block; max-width:170px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
   }
 
+  .autocomplete-drop{
+    display:none; position:absolute; top:100%; left:0; right:0; z-index:50;
+    background:var(--panel2); border:1px solid var(--line); border-radius:6px;
+    margin-top:4px; max-height:220px; overflow-y:auto; box-shadow:0 8px 20px rgba(0,0,0,0.45);
+  }
+  .autocomplete-drop.show{ display:block; }
+  .autocomplete-item{ padding:8px 10px; font-size:13px; cursor:pointer; border-bottom:1px solid var(--line-soft); }
+  .autocomplete-item:last-child{ border-bottom:none; }
+  .autocomplete-item:hover{ background:rgba(255,255,255,0.06); }
+  .autocomplete-item .nombre{ color:var(--text); }
+  .autocomplete-item .link{
+    display:block; font-size:11px; color:var(--text-faint); font-family:var(--mono);
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap; margin-top:2px;
+  }
+
   .badge{
     font-family:var(--mono); font-size:10.5px; text-transform:uppercase; font-weight:700;
     padding:2px 7px; border-radius:4px; border:1px solid; display:inline-block;
@@ -148,6 +163,7 @@
   .badge.finalizado{ color:var(--green); border-color:var(--green); }
   .badge.nopago{ color:var(--red); border-color:var(--red); }
   .badge.cancelado{ color:var(--red); border-color:var(--red); }
+  .badge.programado{ color:#b18aff; border-color:#b18aff; }
 
   .empty{ text-align:center; padding:40px 20px; color:var(--text-faint); font-size:13.5px; }
 
@@ -302,6 +318,11 @@
             <label>Tipo de servicio</label>
             <select id="f-tipo"></select>
           </div>
+          <div class="field">
+            <label>Programar para (opcional)</label>
+            <input type="datetime-local" id="f-programado">
+            <div class="hint">Vacío = disponible ahora. Si elegís una fecha/hora futura, recién aparece en la cola del chofer en ese momento.</div>
+          </div>
         </div>
 
         <div class="row">
@@ -342,16 +363,22 @@
         </div>
         <div class="row" id="grp-links">
           <div class="field">
-            <label>Link de Maps — origen (opcional, pegalo vos)</label>
+            <label>Link de Maps — origen (pegalo vos o elegí una guardada)</label>
             <div style="display:flex; gap:6px;">
-              <input type="text" id="f-link-origen" placeholder="https://maps.app.goo.gl/...">
+              <div style="position:relative; flex:1;">
+                <input type="text" id="f-link-origen" placeholder="Pegá el link o escribí el nombre del lugar" autocomplete="off">
+                <div class="autocomplete-drop" id="drop-link-origen"></div>
+              </div>
               <button type="button" class="btn small" id="btn-abrir-origen">Abrir</button>
             </div>
           </div>
           <div class="field" id="grp-link-destino" style="display:none;">
-            <label>Link de Maps — destino (opcional, pegalo vos)</label>
+            <label>Link de Maps — destino (pegalo vos o elegí una guardada)</label>
             <div style="display:flex; gap:6px;">
-              <input type="text" id="f-link-destino" placeholder="https://maps.app.goo.gl/...">
+              <div style="position:relative; flex:1;">
+                <input type="text" id="f-link-destino" placeholder="Pegá el link o escribí el nombre del lugar" autocomplete="off">
+                <div class="autocomplete-drop" id="drop-link-destino"></div>
+              </div>
               <button type="button" class="btn small" id="btn-abrir-destino">Abrir</button>
             </div>
           </div>
@@ -628,6 +655,17 @@
           <div class="field"><label>Valor</label><input type="number" id="new-tipo-comvalor" placeholder="60" min="0" value="60"></div>
         </div>
         <div class="actions-row"><button class="btn primary" id="btn-add-tipo">Agregar tipo</button></div>
+      </div>
+
+      <div class="card">
+        <h2>Direcciones frecuentes (para traslados)</h2>
+        <div class="hint" style="margin-bottom:10px;">Cargá los lugares a los que van seguido (talleres, etc.) con su link de Maps. Después, al escribir en el campo de link de origen o destino, te va a sugerir estas direcciones.</div>
+        <div id="config-direcciones"></div>
+        <div class="row" style="margin-top:10px;">
+          <div class="field"><label>Nombre del lugar</label><input type="text" id="new-dir-nombre" placeholder="Ej: Taller Pérez"></div>
+          <div class="field"><label>Link de Maps</label><input type="text" id="new-dir-link" placeholder="https://maps.app.goo.gl/..."></div>
+        </div>
+        <div class="actions-row"><button class="btn primary" id="btn-add-direccion">Agregar dirección</button></div>
       </div>
 
       <div class="card">
@@ -960,6 +998,7 @@ async function loadState(){
   if(config.alertarFaltantes === undefined) config.alertarFaltantes = true;
   if(!config.tarifas) config.tarifas = deepClone(DEFAULT_CONFIG.tarifas);
   if(!config.nextOrden) config.nextOrden = 1;
+  if(!config.direccionesFrecuentes) config.direccionesFrecuentes = [];
   if(!config.claveAdmin) config.claveAdmin = DEFAULT_CONFIG.claveAdmin;
   if(!config.claveChofer) config.claveChofer = DEFAULT_CONFIG.claveChofer;
   config.serviceTypes.forEach(t=>{
@@ -1141,8 +1180,8 @@ function abrirDetalleServicio(id, onRefresh){
   const tipoObj = tipoById(s.tipoServicioId);
   const vehiculo = [s.marca, s.modelo].filter(Boolean).join(' ');
   const corte = corteChoferDeRegistro(s);
-  const estadoTxt = s.estadoTrabajo==='finalizado' ? 'Finalizado' : s.estadoTrabajo==='cancelado' ? 'Cancelado' : (s.estadoTrabajo==='en_curso' ? 'En curso' : 'Pendiente');
-  const estadoClase = s.estadoTrabajo==='finalizado' ? 'finalizado' : s.estadoTrabajo==='cancelado' ? 'cancelado' : (s.estadoTrabajo==='en_curso' ? 'pendiente' : 'neutro');
+  const estadoTxt = s.estadoTrabajo==='finalizado' ? 'Finalizado' : s.estadoTrabajo==='cancelado' ? 'Cancelado' : s.estadoTrabajo==='programado' ? 'Programado' : (s.estadoTrabajo==='en_curso' ? 'En curso' : 'Pendiente');
+  const estadoClase = s.estadoTrabajo==='finalizado' ? 'finalizado' : s.estadoTrabajo==='cancelado' ? 'cancelado' : s.estadoTrabajo==='programado' ? 'programado' : (s.estadoTrabajo==='en_curso' ? 'pendiente' : 'neutro');
 
   let html = `
     <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:10px; margin-bottom:4px;">
@@ -1199,6 +1238,8 @@ function abrirDetalleServicio(id, onRefresh){
     html += `<div class="actions-row" style="margin-top:18px;"><button class="btn" data-act="editar-final" data-id="${s.id}" style="width:100%; justify-content:center;">Editar pago / comentario</button></div>`;
   } else if(s.estadoTrabajo==='cancelado'){
     html += `<div class="hint" style="margin-top:18px;">🚫 Este servicio fue cancelado.${s.comentarioCancelacion ? ' '+escapeHtml(s.comentarioCancelacion) : ''}</div>`;
+  } else if(s.estadoTrabajo==='programado'){
+    html += `<div class="hint" style="margin-top:18px;">📅 Programado para <b>${s.fechaProgramada ? fmtFecha(s.fechaProgramada) : ''}</b>. Va a aparecer solo en la cola del chofer cuando llegue ese momento.</div>`;
   }
 
   cont.innerHTML = html;
@@ -1439,6 +1480,7 @@ document.getElementById('btn-guardar').addEventListener('click', onGuardar);
 function resetForm(){
   editingId = null;
   document.getElementById('f-pegado').value='';
+  document.getElementById('f-programado').value='';
   document.getElementById('f-cliente').value='';
   document.getElementById('f-telefono').value='';
   document.getElementById('f-marca').value='';
@@ -1488,10 +1530,31 @@ async function onGuardar(){
     if(!continuar) return;
   }
 
+  const existente = editingId ? servicios.find(s=>s.id===editingId) : null;
+  const programadoVal = document.getElementById('f-programado').value;
+  let fechaProgramada = null;
+  let fechaFinal;
+  if(programadoVal){
+    fechaProgramada = new Date(programadoVal).toISOString();
+    fechaFinal = fechaProgramada;
+  } else {
+    fechaFinal = existente ? existente.fecha : new Date().toISOString();
+  }
+  let estadoTrabajoFinal;
+  if(existente && existente.estadoTrabajo!=='pendiente' && existente.estadoTrabajo!=='programado'){
+    // ya arrancó, se finalizó o se canceló: no lo tocamos por más que cambien la programación
+    estadoTrabajoFinal = existente.estadoTrabajo;
+  } else if(fechaProgramada && new Date(fechaProgramada) > new Date()){
+    estadoTrabajoFinal = 'programado';
+  } else {
+    estadoTrabajoFinal = 'pendiente';
+  }
+
   const record = {
     id: editingId || (Date.now()+'-'+Math.random().toString(36).slice(2,7)),
     ticket: editingId ? servicios.find(s=>s.id===editingId).ticket : ticketFmt(config.nextTicket),
-    fecha: editingId ? servicios.find(s=>s.id===editingId).fecha : new Date().toISOString(),
+    fecha: fechaFinal,
+    fechaProgramada,
     cliente, telefono,
     marca: document.getElementById('f-marca').value.trim(),
     modelo: document.getElementById('f-modelo').value.trim(),
@@ -1509,7 +1572,7 @@ async function onGuardar(){
     valor: Number(document.getElementById('f-valor').value)||0,
     valorTraslado: (tipo.esTraslado && seg.pago==='seguro') ? (Number(document.getElementById('f-valor-traslado').value)||0) : null,
     medioPago: editingId ? (servicios.find(s=>s.id===editingId).medioPago || '') : '',
-    estadoTrabajo: editingId ? servicios.find(s=>s.id===editingId).estadoTrabajo : 'pendiente',
+    estadoTrabajo: estadoTrabajoFinal,
     ordenChofer: editingId ? servicios.find(s=>s.id===editingId).ordenChofer : config.nextOrden,
     notas: document.getElementById('f-notas').value.trim()
   };
@@ -1624,9 +1687,9 @@ function renderRegistro(){
       ? '<span class="badge seguro">Seguro</span>'
       : `<span class="badge ${s.estadoPago==='pagado'?'pagado':'pendiente'}">${s.estadoPago==='pagado'?'Pagado':'Pendiente'}</span>`;
     const medioPagoBadge = s.medioPago ? `<div style="margin-top:3px;"><span class="badge ${s.medioPago==='no_pago'?'nopago':'neutro'}">${s.medioPago==='efectivo'?'💵 Efectivo':s.medioPago==='transferencia'?'🏦 Transferencia':'🚫 No pagó'}</span></div>` : '';
-    const estadoTrabajoClase = s.estadoTrabajo==='finalizado' ? 'finalizado' : s.estadoTrabajo==='cancelado' ? 'cancelado' : (s.estadoTrabajo==='en_curso' ? 'pendiente' : 'neutro');
-    const estadoTrabajoTexto = s.estadoTrabajo==='finalizado' ? 'Finalizado' : s.estadoTrabajo==='cancelado' ? 'Cancelado' : (s.estadoTrabajo==='en_curso' ? 'En curso' : 'Pendiente');
-    const estadoTrabajoBadge = `<span class="badge ${estadoTrabajoClase}">${estadoTrabajoTexto}</span>`;
+    const estadoTrabajoClase = s.estadoTrabajo==='finalizado' ? 'finalizado' : s.estadoTrabajo==='cancelado' ? 'cancelado' : s.estadoTrabajo==='programado' ? 'programado' : (s.estadoTrabajo==='en_curso' ? 'pendiente' : 'neutro');
+    const estadoTrabajoTexto = s.estadoTrabajo==='finalizado' ? 'Finalizado' : s.estadoTrabajo==='cancelado' ? 'Cancelado' : s.estadoTrabajo==='programado' ? 'Programado' : (s.estadoTrabajo==='en_curso' ? 'En curso' : 'Pendiente');
+    const estadoTrabajoBadge = `<span class="badge ${estadoTrabajoClase}">${estadoTrabajoTexto}</span>${(s.estadoTrabajo==='programado' && s.fechaProgramada) ? '<div style="font-size:11px;color:var(--text-faint); margin-top:2px;">'+fmtFecha(s.fechaProgramada)+'</div>' : ''}`;
     const corteChofer = corteChoferDeRegistro(s);
     const corteAvex = corteAvexDeRegistro(s);
     const puedeCancelar = s.estadoTrabajo!=='finalizado';
@@ -1739,6 +1802,11 @@ function copiarLinkServicio(id){
   const url = location.origin + location.pathname + '#servicio=' + id;
   copyText(url);
 }
+function toDatetimeLocalValue(isoStr){
+  const d = new Date(isoStr);
+  const pad = n=> String(n).padStart(2,'0');
+  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
 function editarServicio(id){
   const s = servicios.find(x=>x.id===id);
   if(!s) return;
@@ -1746,6 +1814,7 @@ function editarServicio(id){
   document.querySelector('nav.tabs button[data-view="nuevo"]').click();
   document.getElementById('f-tipo').value = s.tipoServicioId;
   onTipoChange();
+  document.getElementById('f-programado').value = s.fechaProgramada ? toDatetimeLocalValue(s.fechaProgramada) : '';
   document.getElementById('f-cliente').value = s.cliente;
   document.getElementById('f-telefono').value = s.telefono;
   document.getElementById('f-marca').value = s.marca;
@@ -2269,6 +2338,7 @@ function renderConfig(){
   document.getElementById('cfg-clave-admin').value = config.claveAdmin;
   document.getElementById('cfg-clave-chofer').value = config.claveChofer;
   setSegOn('seg-alertar', config.alertarFaltantes===false ? 'no' : 'si');
+  renderDirecciones();
 
   const wrap = document.getElementById('config-tipos');
   wrap.innerHTML = '';
@@ -2393,8 +2463,102 @@ document.getElementById('btn-guardar-tarifas').addEventListener('click', async (
   const ok = await saveAll();
   if(ok) toast('Tarifas guardadas'); else config.tarifas = prev;
 });
+
+/* ---------- DIRECCIONES FRECUENTES (para autocompletar links de Maps) ---------- */
+function renderDirecciones(){
+  const wrap = document.getElementById('config-direcciones');
+  wrap.innerHTML = '';
+  const lista = config.direccionesFrecuentes || [];
+  if(!lista.length){
+    wrap.innerHTML = '<div class="hint" style="border:none; margin:0;">Todavía no cargaste ninguna.</div>';
+  }
+  lista.forEach(d=>{
+    const div = document.createElement('div');
+    div.className = 'config-item';
+    div.innerHTML = `
+      <div class="name">
+        ${escapeHtml(d.nombre)}
+        <div style="font-family:var(--mono); font-size:11px; color:var(--text-faint); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:320px;">${escapeHtml(d.link)}</div>
+      </div>
+      <button class="btn small" data-act="edit-dir" data-id="${d.id}">Editar</button>
+      <button class="btn small danger" data-act="del-dir" data-id="${d.id}">Eliminar</button>
+    `;
+    wrap.appendChild(div);
+  });
+  wrap.querySelectorAll('button').forEach(b=>{
+    b.addEventListener('click', ()=>{
+      if(b.dataset.act==='del-dir') delDireccion(b.dataset.id);
+      if(b.dataset.act==='edit-dir') editDireccionPrompt(b.dataset.id);
+    });
+  });
+}
+async function delDireccion(id){
+  if(!confirm('¿Eliminar esta dirección guardada?')) return;
+  const prev = config.direccionesFrecuentes;
+  config.direccionesFrecuentes = config.direccionesFrecuentes.filter(d=>d.id!==id);
+  const ok = await saveAll();
+  if(ok){ renderDirecciones(); toast('Dirección eliminada'); }
+  else config.direccionesFrecuentes = prev;
+}
+function editDireccionPrompt(id){
+  const d = config.direccionesFrecuentes.find(x=>x.id===id);
+  if(!d) return;
+  const nombre = prompt('Nombre del lugar:', d.nombre);
+  if(nombre===null) return;
+  const link = prompt('Link de Maps:', d.link);
+  if(link===null) return;
+  d.nombre = nombre.trim() || d.nombre;
+  d.link = link.trim() || d.link;
+  saveAll().then(ok=>{ if(ok){ renderDirecciones(); toast('Dirección actualizada'); } });
+}
+document.getElementById('btn-add-direccion').addEventListener('click', async ()=>{
+  const nombre = document.getElementById('new-dir-nombre').value.trim();
+  const link = document.getElementById('new-dir-link').value.trim();
+  if(!nombre || !link){ toast('Completá nombre y link'); return; }
+  config.direccionesFrecuentes = config.direccionesFrecuentes || [];
+  config.direccionesFrecuentes.push({ id:'dir-'+Date.now(), nombre, link });
+  const ok = await saveAll();
+  if(ok){
+    document.getElementById('new-dir-nombre').value = '';
+    document.getElementById('new-dir-link').value = '';
+    renderDirecciones();
+    toast('Dirección agregada');
+  } else {
+    config.direccionesFrecuentes.pop();
+  }
+});
+
+// Autocompletado en los campos de link de origen/destino
+function wireAutocompleteLink(inputId, dropId){
+  const input = document.getElementById(inputId);
+  const drop = document.getElementById(dropId);
+  function render(filtro){
+    const lista = (config.direccionesFrecuentes||[]).filter(d=> !filtro || d.nombre.toLowerCase().includes(filtro.toLowerCase()));
+    if(!lista.length){ drop.classList.remove('show'); drop.innerHTML=''; return; }
+    drop.innerHTML = lista.map(d=> `
+      <div class="autocomplete-item" data-link="${escapeHtml(d.link)}">
+        <div class="nombre">${escapeHtml(d.nombre)}</div>
+        <span class="link">${escapeHtml(d.link)}</span>
+      </div>
+    `).join('');
+    drop.classList.add('show');
+    drop.querySelectorAll('.autocomplete-item').forEach(item=>{
+      item.addEventListener('mousedown', e=>{
+        e.preventDefault();
+        input.value = item.dataset.link;
+        drop.classList.remove('show');
+      });
+    });
+  }
+  input.addEventListener('focus', ()=> render(input.value));
+  input.addEventListener('input', ()=> render(input.value));
+  input.addEventListener('blur', ()=> setTimeout(()=> drop.classList.remove('show'), 150));
+}
+wireAutocompleteLink('f-link-origen', 'drop-link-origen');
+wireAutocompleteLink('f-link-destino', 'drop-link-destino');
+
 document.getElementById('btn-exportar').addEventListener('click', ()=>{
-  copyText(JSON.stringify({ config, servicios }, null, 2));
+  copyText(JSON.stringify({ config, servicios, liquidaciones, pagosChofer }, null, 2));
 });
 
 /* ---------- INIT ---------- */
@@ -2550,7 +2714,34 @@ function iniciarPolling(ms){
   if(intervaloPolling) clearInterval(intervaloPolling);
   intervaloPolling = setInterval(sincronizarAhora, ms);
 }
+
+/* ---------- ACTIVACIÓN DE SERVICIOS PROGRAMADOS ---------- */
+async function activarServiciosProgramados(){
+  const ahora = new Date();
+  let cambio = false;
+  servicios.forEach(s=>{
+    if(s.estadoTrabajo==='programado' && s.fechaProgramada && new Date(s.fechaProgramada) <= ahora){
+      s.estadoTrabajo = 'pendiente';
+      cambio = true;
+    }
+  });
+  if(!cambio) return;
+  const ok = await saveAll();
+  if(!ok) return;
+  if(hayModalAbierto()) return;
+  const vista = vistaActualVisible();
+  if(vista==='registro') renderRegistro();
+  else if(vista==='chofer') renderChoferTab();
+}
+let intervaloActivacion = null;
+function iniciarActivacionProgramados(){
+  if(intervaloActivacion) clearInterval(intervaloActivacion);
+  activarServiciosProgramados();
+  intervaloActivacion = setInterval(activarServiciosProgramados, 20000);
+}
+
 function iniciarSincronizacion(){
+  iniciarActivacionProgramados();
   if(supabaseClient){
     try{
       supabaseClient
