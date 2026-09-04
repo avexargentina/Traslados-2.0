@@ -83,9 +83,10 @@
   label{ display:block; font-size:12px; color:var(--text-dim); margin-bottom:4px; font-family:var(--mono); }
   .row{ display:flex; gap:10px; flex-wrap:wrap; margin-bottom:12px; }
   .field{ flex:1; min-width:140px; }
-  input[type=text], input[type=number], input[type=tel], input[type=date], select, textarea{
+  input[type=text], input[type=number], input[type=tel], input[type=date], input[type=datetime-local], select, textarea{
     width:100%; background:var(--panel2); border:1px solid var(--line); color:var(--text);
     padding:9px 10px; border-radius:6px; font-size:14px; font-family:var(--sans);
+    color-scheme: dark;
   }
   textarea{ font-family:var(--mono); font-size:13px; }
   input:focus, select:focus, textarea:focus{ outline:none; border-color:var(--orange); }
@@ -321,7 +322,7 @@
           <div class="field">
             <label>Programar para (opcional)</label>
             <input type="datetime-local" id="f-programado">
-            <div class="hint">Vacío = disponible ahora. Si elegís una fecha/hora futura, recién aparece en la cola del chofer en ese momento.</div>
+            <div class="hint">Vacío = disponible ahora. Si elegís una fecha/hora, queda como "Programado" en el Registro hasta que vos lo actives manualmente — ahí pasa a la cola del chofer.</div>
           </div>
         </div>
 
@@ -1239,7 +1240,9 @@ function abrirDetalleServicio(id, onRefresh){
   } else if(s.estadoTrabajo==='cancelado'){
     html += `<div class="hint" style="margin-top:18px;">🚫 Este servicio fue cancelado.${s.comentarioCancelacion ? ' '+escapeHtml(s.comentarioCancelacion) : ''}</div>`;
   } else if(s.estadoTrabajo==='programado'){
-    html += `<div class="hint" style="margin-top:18px;">📅 Programado para <b>${s.fechaProgramada ? fmtFecha(s.fechaProgramada) : ''}</b>. Va a aparecer solo en la cola del chofer cuando llegue ese momento.</div>`;
+    html += `
+      <div class="hint" style="margin-top:18px; margin-bottom:8px;">📅 Programado para <b>${s.fechaProgramada ? fmtFecha(s.fechaProgramada) : ''}</b>. Todavía no aparece en la cola del chofer.</div>
+      <div class="actions-row"><button class="btn primary" data-act="activar" data-id="${s.id}" style="width:100%; justify-content:center;">▶ Activar ahora</button></div>`;
   }
 
   cont.innerHTML = html;
@@ -1262,6 +1265,9 @@ function abrirDetalleServicio(id, onRefresh){
       } else if(b.dataset.act==='finalizar' || b.dataset.act==='editar-final'){
         cerrarDetalleServicio();
         abrirModalFinalizar(sid, refrescar);
+      } else if(b.dataset.act==='activar'){
+        cerrarDetalleServicio();
+        activarServicioProgramado(sid).then(refrescar);
       }
     });
   });
@@ -1544,7 +1550,7 @@ async function onGuardar(){
   if(existente && existente.estadoTrabajo!=='pendiente' && existente.estadoTrabajo!=='programado'){
     // ya arrancó, se finalizó o se canceló: no lo tocamos por más que cambien la programación
     estadoTrabajoFinal = existente.estadoTrabajo;
-  } else if(fechaProgramada && new Date(fechaProgramada) > new Date()){
+  } else if(fechaProgramada){
     estadoTrabajoFinal = 'programado';
   } else {
     estadoTrabajoFinal = 'pendiente';
@@ -1705,6 +1711,7 @@ function renderRegistro(){
       <td>${corteAvex!==null ? fmtMoney(corteAvex) : '—'}</td>
       <td>${corteChofer!==null ? fmtMoney(corteChofer) : '—'}</td>
       <td>
+        ${s.estadoTrabajo==='programado' ? `<button class="btn small primary" data-act="activar" data-id="${s.id}">▶ Activar</button>` : ''}
         <button class="btn small" data-act="link" data-id="${s.id}">Link</button>
         <button class="btn small" data-act="copiar" data-id="${s.id}">Copiar</button>
         <button class="btn small" data-act="editar" data-id="${s.id}">Editar</button>
@@ -1719,6 +1726,7 @@ function renderRegistro(){
     b.addEventListener('click', (e)=>{
       e.stopPropagation();
       const id = b.dataset.id;
+      if(b.dataset.act==='activar') activarServicioProgramado(id);
       if(b.dataset.act==='copiar') copiarServicio(id);
       if(b.dataset.act==='editar') editarServicio(id);
       if(b.dataset.act==='borrar') borrarServicio(id);
@@ -2715,33 +2723,19 @@ function iniciarPolling(ms){
   intervaloPolling = setInterval(sincronizarAhora, ms);
 }
 
-/* ---------- ACTIVACIÓN DE SERVICIOS PROGRAMADOS ---------- */
-async function activarServiciosProgramados(){
-  const ahora = new Date();
-  let cambio = false;
-  servicios.forEach(s=>{
-    if(s.estadoTrabajo==='programado' && s.fechaProgramada && new Date(s.fechaProgramada) <= ahora){
-      s.estadoTrabajo = 'pendiente';
-      cambio = true;
-    }
-  });
-  if(!cambio) return;
+/* ---------- ACTIVAR SERVICIO PROGRAMADO (manual, solo admin desde Registro) ---------- */
+async function activarServicioProgramado(id){
+  const s = servicios.find(x=>x.id===id);
+  if(!s) return;
+  const prev = { estadoTrabajo:s.estadoTrabajo, fecha:s.fecha };
+  s.estadoTrabajo = 'pendiente';
+  s.fecha = new Date().toISOString(); // se registra el momento real de activación
   const ok = await saveAll();
-  if(!ok) return;
-  if(hayModalAbierto()) return;
-  const vista = vistaActualVisible();
-  if(vista==='registro') renderRegistro();
-  else if(vista==='chofer') renderChoferTab();
-}
-let intervaloActivacion = null;
-function iniciarActivacionProgramados(){
-  if(intervaloActivacion) clearInterval(intervaloActivacion);
-  activarServiciosProgramados();
-  intervaloActivacion = setInterval(activarServiciosProgramados, 20000);
+  if(ok){ toast('Servicio activado'); renderRegistro(); }
+  else Object.assign(s, prev);
 }
 
 function iniciarSincronizacion(){
-  iniciarActivacionProgramados();
   if(supabaseClient){
     try{
       supabaseClient
